@@ -1,13 +1,12 @@
 project:
-  name: SAFARI
-  description: Sales & Marketing Analytics
-  prefix: SAFARI
+  name: Expense Tracker
+  description: Track your expenses
+  prefix: EXP
   next_task_number: 2
 tasks:
-- tag: SAFARI-001
-  title: Fix multiple row selection in main view table
-  description: Currently, it is only allowed to selected one row, and the selection
-    is not highlighted
-  priority: high
+- tag: EXP-001
+  title: Add expense tracking feature
+  description: Implement expense tracking functionality
+  priority: medium
   created_at: '2025-04-12T18:50:55.846158'
   completed: false
