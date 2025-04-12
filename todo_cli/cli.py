@@ -2,13 +2,17 @@ import typer
 from rich.console import Console
 from rich.table import Table
 from rich.prompt import Prompt, Confirm
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn, TimeRemainingColumn
 import yaml
 from pathlib import Path
 from typing import Optional, List, Dict
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import os
 from rich.style import Style
 import dateparser
+import time
+import signal
+import sys
 
 app = typer.Typer()
 console = Console()
@@ -87,6 +91,18 @@ def format_due_date(due_date: Optional[datetime]) -> str:
     else:
         return f"[green]Due in {days_until} days[/green]"
 
+def format_duration(minutes: int) -> str:
+    """Format duration in minutes to a human-readable string"""
+    hours = minutes // 60
+    mins = minutes % 60
+    if hours > 0:
+        return f"{hours}h {mins}m"
+    return f"{mins}m"
+
+def get_total_worked_time(work_sessions: List[Dict]) -> int:
+    """Calculate total worked time in minutes from work sessions"""
+    return sum(session["duration"] for session in work_sessions)
+
 @app.command()
 def init():
     """Initialize a new todo list with project details"""
@@ -154,6 +170,92 @@ def add():
     console.print(f"[green]✓[/green] Task [bold]{task_tag}[/bold] added successfully!")
 
 @app.command()
+def work(
+    tag: str,
+    duration: Optional[int] = typer.Option(25, "--duration", "-d", help="Duration in minutes"),
+):
+    """Work on a specific task for a given duration (default: 25 minutes)"""
+    todos = load_todos()
+    
+    # Find the task
+    task = None
+    for t in todos["tasks"]:
+        if t["tag"].lower() == tag.lower():
+            task = t
+            break
+    
+    if not task:
+        console.print(f"[red]Error:[/red] Task with tag [bold]{tag}[/bold] not found!")
+        return
+    
+    # Initialize work_sessions if it doesn't exist
+    if "work_sessions" not in task:
+        task["work_sessions"] = []
+    
+    # Show task info
+    console.print(f"\n[bold]Working on:[/bold] {task['title']} ({task['tag']})")
+    if task["work_sessions"]:
+        total_time = get_total_worked_time(task["work_sessions"])
+        console.print(f"[dim]Total time worked: {format_duration(total_time)}[/dim]")
+    
+    # Create progress bar
+    total_seconds = duration * 60
+    
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+            console=console,
+        ) as progress:
+            work_task = progress.add_task(
+                f"[cyan]Working on {task['tag']}...",
+                total=total_seconds,
+            )
+            
+            start_time = datetime.now()
+            
+            # Setup signal handler for clean exit
+            def handle_interrupt(signum, frame):
+                progress.stop()
+                console.print("\n[yellow]Work session interrupted![/yellow]")
+                actual_duration = int((datetime.now() - start_time).total_seconds() / 60)
+                if actual_duration > 0:
+                    save_work_session(todos, task, actual_duration, interrupted=True)
+                sys.exit(0)
+            
+            signal.signal(signal.SIGINT, handle_interrupt)
+            
+            while not progress.finished:
+                progress.update(work_task, advance=1)
+                time.sleep(1)
+            
+            # Save the work session
+            save_work_session(todos, task, duration)
+            
+            console.print(f"\n[green]✓[/green] Completed {format_duration(duration)} work session!")
+            
+    except KeyboardInterrupt:
+        # Handle Ctrl+C gracefully
+        console.print("\n[yellow]Work session interrupted![/yellow]")
+        actual_duration = int((datetime.now() - start_time).total_seconds() / 60)
+        if actual_duration > 0:
+            save_work_session(todos, task, actual_duration, interrupted=True)
+
+def save_work_session(todos: Dict, task: Dict, duration: int, interrupted: bool = False):
+    """Save a work session to the task"""
+    session = {
+        "started_at": datetime.now().isoformat(),
+        "duration": duration,
+        "interrupted": interrupted
+    }
+    task["work_sessions"].append(session)
+    save_todos(todos)
+
+@app.command()
 def list():
     """List all tasks with project information"""
     todos = load_todos()
@@ -173,6 +275,7 @@ def list():
     table.add_column("Description")
     table.add_column("Priority", style="bold")
     table.add_column("Due Date", style="bold")
+    table.add_column("Time Worked", style="bold")
     table.add_column("Status")
     
     # Sort tasks by due date and completion status
@@ -196,12 +299,19 @@ def list():
             datetime.fromisoformat(task.get("due_date")) if task.get("due_date") else None
         )
         
+        # Calculate total time worked
+        total_time = "0m"
+        if "work_sessions" in task:
+            minutes = get_total_worked_time(task["work_sessions"])
+            total_time = format_duration(minutes)
+        
         table.add_row(
             task["tag"],
             task["title"],
             task["description"] or "-",
             f"[{priority_color}]{task['priority']}[/{priority_color}]",
             due_date_str,
+            total_time,
             status
         )
     
@@ -231,6 +341,7 @@ def help():
         ("add", "Add a new task interactively"),
         ("list", "List all tasks with project information"),
         ("complete <tag>", "Mark a task as complete using its tag (e.g., PROJ-001)"),
+        ("work <tag>", "Work on a specific task for a given duration (default: 25 minutes)"),
         ("help", "Show this help message")
     ]
     
