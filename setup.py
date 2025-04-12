@@ -9,6 +9,7 @@ setup(
         "typer==0.9.0",
         "rich==13.7.0",
         "pyyaml==6.0.1",
+        "dateparser==1.2.0",
     ],
     entry_points={
         "console_scripts": [
