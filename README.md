@@ -1,44 +1,150 @@
 # Todo CLI
 
-A rich command-line interface todo app with project management and task tagging capabilities.
+A powerful command-line interface todo application with project management features, time tracking, and rich terminal output.
 
 ## Features
 
-- Interactive task management with a beautiful terminal interface
-- Project-based organization with customizable task tags (e.g., PROJ-001)
-- Priority levels (low, medium, high) with color coding
-- Local or global todo list storage
-- Rich command-line interface with helpful prompts
+### Project Management
+- Project-based task organization with custom prefixes
+- Automatic task numbering (e.g., PROJ-001)
+- Local or global todo lists (per directory or user-wide)
+
+### Task Management
+- Interactive task creation
+- Priority levels (high, medium, low) with color coding
+- Due dates with natural language support ("tomorrow", "next friday")
+- Task completion tracking
+- Rich terminal output with detailed task information
+
+### Time Tracking
+- Built-in Pomodoro-style timer (default: 25 minutes)
+- Customizable work session durations
+- Work session history per task
+- Interruption tracking
+- Total time worked statistics
+
+### Project Analytics
+- Comprehensive project status dashboard
+- Task completion rates
+- Priority distribution
+- Due date statistics
+- Work session analytics
+- Time tracking summary
 
 ## Installation
 
-You can install the package directly from the source:
-
 ```bash
-pip install .
+pip install todo-cli
 ```
 
 ## Usage
 
-The `todo` command will be available globally after installation. Here are the available commands:
-
-- `todo init` - Initialize a new todo list with project details
-- `todo add` - Add a new task interactively
-- `todo list` - List all tasks with project information
-- `todo complete <tag>` - Mark a task as complete using its tag (e.g., PROJ-001)
-- `todo help` - Show help message and command descriptions
-
-For detailed help on any command, use the `--help` flag:
-
+### Initialize a Project
 ```bash
-todo --help
-todo add --help
+todo init
+```
+Follow the prompts to set:
+- Project name
+- Project description
+- Task prefix (e.g., "PROJ" for PROJ-001)
+
+### Add a Task
+```bash
+todo add
+```
+You'll be prompted for:
+- Task title
+- Description (optional)
+- Priority (low/medium/high)
+- Due date (optional, supports natural language)
+
+### List Tasks
+```bash
+todo list
+```
+Shows a table with:
+- Task tag (e.g., PROJ-001)
+- Title and description
+- Priority (color-coded)
+- Due date status
+- Time worked
+- Completion status
+
+### Work on a Task
+```bash
+todo workon PROJ-001              # Start a 25-minute work session
+todo workon PROJ-001 -d 45       # Start a 45-minute work session
+```
+Features:
+- Interactive progress bar
+- Time tracking
+- Session history
+- Graceful interruption handling (Ctrl+C)
+
+### View Project Status
+```bash
+todo status
+```
+Shows:
+- Project information
+- Task completion rates
+- Priority distribution
+- Due date statistics
+- Work session analytics
+- Time tracking summary
+
+### Complete a Task
+```bash
+todo complete PROJ-001
 ```
 
-## Todo File Location
+### Get Help
+```bash
+todo help                # Show all commands
+todo help <command>      # Show detailed help for a specific command
+```
 
-The app will look for a `todo.yaml` file in the following locations:
-1. Current directory
-2. User's home directory (as `.todo.yaml`)
+## Configuration
 
-This allows you to have both project-specific and global todo lists.
+The app stores tasks in YAML format:
+- Local project: `todo.yaml` in the current directory
+- Global fallback: `.todo.yaml` in your home directory
+
+## Task Storage Format
+
+```yaml
+project:
+  name: "My Project"
+  description: "Project description"
+  prefix: "PROJ"
+  next_task_number: 1
+tasks:
+  - tag: "PROJ-001"
+    title: "Example Task"
+    description: "Task description"
+    priority: "high"
+    created_at: "2025-04-12T20:00:00"
+    due_date: "2025-04-19T23:59:59"
+    completed: false
+    work_sessions:
+      - started_at: "2025-04-12T20:30:00"
+        duration: 25
+        interrupted: false
+```
+
+## Development
+
+1. Clone the repository
+2. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+3. Run the CLI:
+```bash
+python -m todo_cli.cli
+```
+
+## License
+
+MIT License
