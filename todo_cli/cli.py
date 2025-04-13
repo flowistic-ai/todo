@@ -3,16 +3,19 @@ from rich.console import Console
 from rich.table import Table
 from rich.prompt import Prompt, Confirm
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn, TimeRemainingColumn
+from rich.text import Text
 import yaml
 from pathlib import Path
 from typing import Optional, List, Dict
 from datetime import datetime, date, timedelta
 import os
-from rich.style import Style
-import dateparser
-import time
 import signal
 import sys
+import time
+import dateparser
+import dateutil
+from dateutil import parser
+from dateutil.relativedelta import relativedelta
 
 app = typer.Typer()
 console = Console()
@@ -148,6 +151,7 @@ def add():
     - Description (optional)
     - Priority (low/medium/high, defaults to medium)
     - Due date (optional, supports natural language like 'tomorrow', 'next friday')
+    - Initial note (optional)
     
     The task will be automatically tagged using the project prefix.
     Example: For project prefix 'PROJ', first task will be 'PROJ-001'
@@ -165,6 +169,7 @@ def add():
         "Due date (optional, e.g., 'tomorrow', 'next friday', '2025-04-20')",
         default=""
     )
+    notes = Prompt.ask("Initial note (optional)", default="")
     
     due_date = parse_due_date(due_date_str)
     if due_date_str and not due_date:
@@ -182,7 +187,9 @@ def add():
         "priority": priority,
         "created_at": datetime.now().isoformat(),
         "due_date": due_date.isoformat() if due_date else None,
-        "completed": False
+        "completed": False,
+        "work_sessions": [],
+        "notes": [notes] if notes else []
     }
     
     todos["tasks"].append(task)
@@ -201,6 +208,7 @@ def list():
     - Due date (with relative time and color-coded status)
     - Time worked (total time spent in work sessions)
     - Status (✓ for completed, ✗ for pending)
+    - Notes (if any)
     
     Tasks are sorted by:
     1. Completion status (incomplete first)
@@ -217,14 +225,11 @@ def list():
         console.print("[yellow]No tasks found![/yellow]")
         return
     
-    table = Table(show_header=True)
-    table.add_column("Tag", style="bold")
-    table.add_column("Title")
-    table.add_column("Description")
-    table.add_column("Priority", style="bold")
-    table.add_column("Due Date", style="bold")
-    table.add_column("Time Worked", style="bold")
-    table.add_column("Status")
+    table = Table(
+        "Tag", "Title", "Priority", "Due Date", "Time Worked", "Status", "Notes",
+        title="Tasks",
+        expand=True
+    )
     
     # Sort tasks by due date and completion status
     def sort_key(task):
@@ -253,14 +258,20 @@ def list():
             minutes = get_total_worked_time(task["work_sessions"])
             total_time = format_duration(minutes)
         
+        # Format notes count if they exist
+        notes_text = ""
+        if task.get("notes"):
+            note_count = len(task["notes"])
+            notes_text = f"[dim]{note_count} note{'s' if note_count != 1 else ''}[/dim]"
+        
         table.add_row(
             task["tag"],
-            task["title"],
-            task["description"] or "-",
-            f"[{priority_color}]{task['priority']}[/{priority_color}]",
-            due_date_str,
+            Text(task["title"], style="bold"),
+            Text(task["priority"], style=priority_color),
+            Text(due_date_str, style="bold") if due_date_str else "",
             total_time,
-            status
+            status,
+            notes_text
         )
     
     console.print(table)
@@ -387,6 +398,173 @@ def save_work_session(todos: Dict, task: Dict, duration: int, interrupted: bool 
     }
     task["work_sessions"].append(session)
     save_todos(todos)
+
+# Create a note command group
+notes_app = typer.Typer(help="Manage task notes")
+app.add_typer(notes_app, name="note")
+
+@notes_app.command("add")
+def add_note(
+    tag: str = typer.Argument(..., help="The task's tag (e.g., PROJ-001)"),
+    text: Optional[str] = typer.Argument(None, help="Note text. If not provided, will prompt for input.")
+):
+    """
+    Add a new note to a task. Notes are stored as a chronological list.
+    
+    Arguments:
+        tag: The task's tag (e.g., PROJ-001, case-insensitive)
+        text: Note text (optional). If not provided, will prompt for input.
+    
+    Example:
+        todo note add PROJ-001 "Remember to update documentation"
+        todo note add PROJ-001  # Will prompt for note text
+    """
+    todos = load_todos()
+    
+    # Find the task
+    task = next((t for t in todos["tasks"] if t["tag"].lower() == tag.lower()), None)
+    if not task:
+        console.print(f"[red]Error:[/red] Task '{tag}' not found!")
+        return
+    
+    # Initialize notes list if it doesn't exist
+    if "notes" not in task:
+        task["notes"] = []
+    
+    # If no text provided, show existing notes and prompt for new one
+    if text is None:
+        if task["notes"]:
+            console.print("\nExisting notes:")
+            for i, note in enumerate(task["notes"], 1):
+                console.print(f"[dim]{i}.[/dim] {note}")
+            console.print()
+        text = Prompt.ask("Enter new note")
+    
+    # Add the new note to the list
+    if text:
+        task["notes"].append(text)
+        save_todos(todos)
+        console.print(f"[green]✓[/green] Added new note to task {tag}")
+
+@notes_app.command("reset")
+def reset_notes(
+    tag: str = typer.Argument(..., help="The task's tag (e.g., PROJ-001)")
+):
+    """
+    Reset (clear) all notes from a task.
+    
+    Arguments:
+        tag: The task's tag (e.g., PROJ-001, case-insensitive)
+    
+    Example:
+        todo note reset PROJ-001
+    """
+    todos = load_todos()
+    
+    # Find the task
+    task = next((t for t in todos["tasks"] if t["tag"].lower() == tag.lower()), None)
+    if not task:
+        console.print(f"[red]Error:[/red] Task '{tag}' not found!")
+        return
+    
+    # Check if task has any notes
+    if not task.get("notes"):
+        console.print("[yellow]Task has no notes to reset.[/yellow]")
+        return
+    
+    # Show current notes
+    console.print("\nCurrent notes:")
+    for i, note in enumerate(task["notes"], 1):
+        console.print(f"[dim]{i}.[/dim] {note}")
+    
+    # Confirm reset
+    if Confirm.ask("\nAre you sure you want to reset all notes?", default=False):
+        task["notes"] = []
+        save_todos(todos)
+        console.print("[green]✓[/green] All notes have been cleared.")
+    else:
+        console.print("Operation cancelled.")
+
+@app.command()
+def show(
+    tag: str = typer.Argument(..., help="The task's tag (e.g., PROJ-001)")
+):
+    """
+    Show detailed information about a specific task.
+    
+    Arguments:
+        tag: The task's tag (e.g., PROJ-001, case-insensitive)
+    
+    Example:
+        todo show PROJ-001
+    """
+    todos = load_todos()
+    
+    # Find the task
+    task = next((t for t in todos["tasks"] if t["tag"].lower() == tag.lower()), None)
+    if not task:
+        console.print(f"[red]Error:[/red] Task '{tag}' not found!")
+        return
+    
+    # Create a panel to display task information
+    console.print(f"\n[bold blue]{task['tag']}[/bold blue]: [bold]{task['title']}[/bold]")
+    
+    # Status and Priority
+    status = "[green]✓ Completed[/green]" if task["completed"] else "[yellow]⧖ In Progress[/yellow]"
+    priority_colors = {"high": "red", "medium": "yellow", "low": "blue"}
+    priority = f"[{priority_colors[task['priority']]}]{task['priority']}[/{priority_colors[task['priority']]}]"
+    console.print(f"Status: {status}")
+    console.print(f"Priority: {priority}")
+    
+    # Description
+    if task.get("description"):
+        console.print("\n[bold]Description:[/bold]")
+        console.print(task["description"])
+    
+    # Notes
+    if task.get("notes"):
+        console.print("\n[bold]Notes:[/bold]")
+        for i, note in enumerate(task["notes"], 1):
+            console.print(f"[dim]{i}.[/dim] {note}")
+    
+    # Due Date
+    if task.get("due_date"):
+        due_date = parser.parse(task["due_date"])
+        now = datetime.now()
+        due_date_str = format_due_date(due_date)
+        
+        if due_date < now:
+            due_style = "red"
+        elif due_date < now + timedelta(days=2):
+            due_style = "yellow"
+        else:
+            due_style = "green"
+            
+        console.print(f"\n[bold]Due Date:[/bold] [{due_style}]{due_date_str}[/{due_style}]")
+    
+    # Work Sessions
+    if task.get("work_sessions"):
+        console.print("\n[bold]Work Sessions:[/bold]")
+        total_time = get_total_worked_time(task["work_sessions"])
+        
+        table = Table("Date", "Duration", "Status", show_header=True, box=None)
+        for session in sorted(task["work_sessions"], key=lambda x: x["started_at"]):
+            start_time = parser.parse(session["started_at"])
+            duration = format_duration(session["duration"])
+            status = "[yellow]Interrupted[/yellow]" if session.get("interrupted") else "[green]Completed[/green]"
+            
+            table.add_row(
+                start_time.strftime("%Y-%m-%d %H:%M"),
+                duration,
+                status
+            )
+        
+        console.print(table)
+        console.print(f"\nTotal time worked: [bold]{format_duration(total_time)}[/bold]")
+    
+    # Created Date
+    created_at = parser.parse(task["created_at"])
+    console.print(f"\nCreated: {created_at.strftime('%Y-%m-%d %H:%M')}")
 
 def calculate_project_stats(todos: Dict) -> Dict:
     """Calculate comprehensive project statistics"""
@@ -579,9 +757,12 @@ def help(
         ("init", "Initialize a new todo list with project details"),
         ("add", "Add a new task interactively"),
         ("list", "List all tasks with project information"),
+        ("show <tag>", "Show detailed information about a specific task"),
         ("status", "Show detailed project status and statistics"),
         ("complete <tag>", "Mark a task as complete using its tag (e.g., PROJ-001)"),
         ("workon <tag>", "Work on a specific task for a given duration (default: 25 minutes)"),
+        ("note add <tag>", "Add a new note to a task"),
+        ("note reset <tag>", "Reset (clear) all notes from a task"),
         ("help [command]", "Show this help message or detailed help for a command")
     ]
     

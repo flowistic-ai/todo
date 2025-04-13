@@ -84,3 +84,5 @@ dmypy.json
 
 # renaming of local todo.yam for testing
 todo_.yaml
+
+.pypirc

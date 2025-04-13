@@ -15,6 +15,7 @@ A powerful command-line interface todo application with project management featu
 - Due dates with natural language support ("tomorrow", "next friday")
 - Task completion tracking
 - Rich terminal output with detailed task information
+- Task notes with chronological history
 
 ### Time Tracking
 - Built-in Pomodoro-style timer (default: 25 minutes)
@@ -57,6 +58,7 @@ You'll be prompted for:
 - Description (optional)
 - Priority (low/medium/high)
 - Due date (optional, supports natural language)
+- Initial note (optional)
 
 ### List Tasks
 ```bash
@@ -69,6 +71,27 @@ Shows a table with:
 - Due date status
 - Time worked
 - Completion status
+- Number of notes
+
+### Show Task Details
+```bash
+todo show PROJ-001
+```
+Shows detailed information about a specific task:
+- Task title and tag
+- Status and priority
+- Description
+- All notes in chronological order
+- Due date with status
+- Work session history
+- Creation date
+
+### Manage Task Notes
+```bash
+todo note add PROJ-001 "Note text"     # Add a new note
+todo note add PROJ-001                 # Add note with interactive prompt
+todo note reset PROJ-001               # Clear all notes (with confirmation)
+```
 
 ### Work on a Task
 ```bash
@@ -126,6 +149,9 @@ tasks:
     created_at: "2025-04-12T20:00:00"
     due_date: "2025-04-19T23:59:59"
     completed: false
+    notes:
+      - "Initial task planning complete"
+      - "Updated requirements after review"
     work_sessions:
       - started_at: "2025-04-12T20:30:00"
         duration: 25
