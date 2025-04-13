@@ -86,13 +86,13 @@ def format_due_date(due_date: Optional[datetime]) -> str:
     days_until = (due_date - now).days
     
     if days_until < 0:
-        return f"[red]Overdue by {abs(days_until)} days[/red]"
+        return f"Overdue by {abs(days_until)} days"
     elif days_until == 0:
-        return "[yellow]Due today[/yellow]"
+        return "Due today"
     elif days_until == 1:
-        return "[yellow]Due tomorrow[/yellow]"
+        return "Due tomorrow"
     else:
-        return f"[green]Due in {days_until} days[/green]"
+        return f"Due in {days_until} days"
 
 def format_duration(minutes: int) -> str:
     """Format duration in minutes to a human-readable string"""
@@ -248,9 +248,19 @@ def list():
             "high": "red"
         }[task["priority"]]
         
-        due_date_str = format_due_date(
-            datetime.fromisoformat(task.get("due_date")) if task.get("due_date") else None
-        )
+        due_date_str = ""
+        due_date_style = ""
+        if task.get("due_date"):
+            due_date = parser.parse(task["due_date"])
+            now = datetime.now()
+            due_date_str = format_due_date(due_date)
+            
+            if due_date < now:
+                due_date_style = "red"
+            elif due_date < now + timedelta(days=2):
+                due_date_style = "yellow"
+            else:
+                due_date_style = "green"
         
         # Calculate total time worked
         total_time = "0m"
@@ -268,7 +278,7 @@ def list():
             task["tag"],
             Text(task["title"], style="bold"),
             Text(task["priority"], style=priority_color),
-            Text(due_date_str, style="bold") if due_date_str else "",
+            Text(due_date_str, style=due_date_style) if due_date_str else "",
             total_time,
             status,
             notes_text
