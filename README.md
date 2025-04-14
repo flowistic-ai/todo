@@ -37,7 +37,7 @@ A powerful command-line interface todo application with project management featu
 ## Installation
 
 ```bash
-pip install todo-cli
+pip install flowistic-todo
 ```
 
 ## Usage
