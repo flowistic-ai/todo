@@ -20,6 +20,19 @@ from dateutil.relativedelta import relativedelta
 app = typer.Typer()
 console = Console()
 
+# Define valid task types
+TASK_TYPES = ["feature", "bugfix", "docs", "test", "refactor", "chore"]
+
+# Define task type colors
+TASK_TYPE_COLORS = {
+    "feature": "green",
+    "bugfix": "red",
+    "docs": "blue",
+    "test": "yellow",
+    "refactor": "magenta",
+    "chore": "cyan"
+}
+
 def get_todo_file() -> Path:
     """Get the todo file path from either the current directory or user's home directory"""
     local_todo = Path("todo.yaml")
@@ -149,8 +162,9 @@ def add():
     You will be prompted for:
     - Task title (required)
     - Description (optional)
-    - Priority (low/medium/high, defaults to medium)
-    - Due date (optional, supports natural language like 'tomorrow', 'next friday')
+    - Type (feature/bugfix/docs/test/refactor/chore)
+    - Priority (low/medium/high)
+    - Due date (optional, supports natural language)
     - Initial note (optional)
     
     The task will be automatically tagged using the project prefix.
@@ -164,6 +178,11 @@ def add():
     
     title = Prompt.ask("Task title")
     description = Prompt.ask("Description (optional)", default="")
+    task_type = Prompt.ask(
+        "Type",
+        choices=TASK_TYPES,
+        default="feature"
+    )
     priority = Prompt.ask("Priority", choices=["low", "medium", "high"], default="medium")
     due_date_str = Prompt.ask(
         "Due date (optional, e.g., 'tomorrow', 'next friday', '2025-04-20')",
@@ -184,6 +203,7 @@ def add():
         "tag": task_tag,
         "title": title,
         "description": description,
+        "type": task_type,
         "priority": priority,
         "created_at": datetime.now().isoformat(),
         "due_date": due_date.isoformat() if due_date else None,
@@ -203,16 +223,13 @@ def list():
     
     Displays a table with:
     - Task tag (e.g., PROJ-001)
-    - Title and description
-    - Priority (color-coded: red=high, yellow=medium, blue=low)
-    - Due date (with relative time and color-coded status)
-    - Time worked (total time spent in work sessions)
-    - Status (✓ for completed, ✗ for pending)
-    - Notes (if any)
-    
-    Tasks are sorted by:
-    1. Completion status (incomplete first)
-    2. Due date (earliest first, tasks without due dates last)
+    - Type (feature/bugfix/etc.)
+    - Title
+    - Priority (color-coded)
+    - Due date
+    - Time worked
+    - Status
+    - Notes count
     """
     todos = load_todos()
     
@@ -226,7 +243,7 @@ def list():
         return
     
     table = Table(
-        "Tag", "Title", "Priority", "Due Date", "Time Worked", "Status", "Notes",
+        "Tag", "Type", "Title", "Priority", "Due Date", "Time Worked", "Status", "Notes",
         title="Tasks",
         expand=True
     )
@@ -274,8 +291,12 @@ def list():
             note_count = len(task["notes"])
             notes_text = f"[dim]{note_count} note{'s' if note_count != 1 else ''}[/dim]"
         
+        # Format task type with color
+        type_color = TASK_TYPE_COLORS[task["type"]]
+        
         table.add_row(
             task["tag"],
+            Text(task["type"], style=type_color),
             Text(task["title"], style="bold"),
             Text(task["priority"], style=priority_color),
             Text(due_date_str, style=due_date_style) if due_date_str else "",
@@ -519,7 +540,9 @@ def show(
     # Create a panel to display task information
     console.print(f"\n[bold blue]{task['tag']}[/bold blue]: [bold]{task['title']}[/bold]")
     
-    # Status and Priority
+    # Type and Priority
+    type_color = TASK_TYPE_COLORS[task["type"]]
+    console.print(f"Type: [{type_color}]{task['type']}[/{type_color}]")
     status = "[green]✓ Completed[/green]" if task["completed"] else "[yellow]⧖ In Progress[/yellow]"
     priority_colors = {"high": "red", "medium": "yellow", "low": "blue"}
     priority = f"[{priority_colors[task['priority']]}]{task['priority']}[/{priority_colors[task['priority']]}]"
@@ -723,6 +746,219 @@ def status():
     
     console.print("\n[dim]Use 'todo list' for detailed task information[/dim]")
 
+# Create an update command group
+update_app = typer.Typer(help="Update task properties")
+app.add_typer(update_app, name="update")
+
+@update_app.command("type")
+def update_type(
+    tag: str = typer.Argument(..., help="The task's tag (e.g., PROJ-001)"),
+    new_type: Optional[str] = typer.Argument(None, help="New task type. If not provided, will prompt for input.")
+):
+    """
+    Update a task's type.
+    
+    Arguments:
+        tag: The task's tag (e.g., PROJ-001, case-insensitive)
+        new_type: New task type. If not provided, will prompt for input.
+    
+    Example:
+        todo update type PROJ-001 feature
+        todo update type PROJ-001  # Will prompt for type
+    """
+    todos = load_todos()
+    
+    # Find the task
+    task = next((t for t in todos["tasks"] if t["tag"].lower() == tag.lower()), None)
+    if not task:
+        console.print(f"[red]Error:[/red] Task '{tag}' not found!")
+        return
+    
+    # Show current type and get new one
+    current_type = task["type"]
+    console.print(f"\nCurrent type: [{TASK_TYPE_COLORS[current_type]}]{current_type}[/{TASK_TYPE_COLORS[current_type]}]")
+    
+    if new_type is None:
+        new_type = Prompt.ask("New type", choices=TASK_TYPES, default=current_type)
+    elif new_type not in TASK_TYPES:
+        console.print(f"[red]Error:[/red] Invalid type. Must be one of: {', '.join(TASK_TYPES)}")
+        return
+    
+    # Update the type
+    task["type"] = new_type
+    save_todos(todos)
+    console.print(f"[green]✓[/green] Updated task type to: [{TASK_TYPE_COLORS[new_type]}]{new_type}[/{TASK_TYPE_COLORS[new_type]}]")
+
+@update_app.command("priority")
+def update_priority(
+    tag: str = typer.Argument(..., help="The task's tag (e.g., PROJ-001)"),
+    new_priority: Optional[str] = typer.Argument(None, help="New priority. If not provided, will prompt for input.")
+):
+    """
+    Update a task's priority.
+    
+    Arguments:
+        tag: The task's tag (e.g., PROJ-001, case-insensitive)
+        new_priority: New priority. If not provided, will prompt for input.
+    
+    Example:
+        todo update priority PROJ-001 high
+        todo update priority PROJ-001  # Will prompt for priority
+    """
+    todos = load_todos()
+    
+    # Find the task
+    task = next((t for t in todos["tasks"] if t["tag"].lower() == tag.lower()), None)
+    if not task:
+        console.print(f"[red]Error:[/red] Task '{tag}' not found!")
+        return
+    
+    # Show current priority and get new one
+    priority_colors = {"high": "red", "medium": "yellow", "low": "blue"}
+    current_priority = task["priority"]
+    console.print(f"\nCurrent priority: [{priority_colors[current_priority]}]{current_priority}[/{priority_colors[current_priority]}]")
+    
+    if new_priority is None:
+        new_priority = Prompt.ask("New priority", choices=["low", "medium", "high"], default=current_priority)
+    elif new_priority not in ["low", "medium", "high"]:
+        console.print("[red]Error:[/red] Invalid priority. Must be one of: low, medium, high")
+        return
+    
+    # Update the priority
+    task["priority"] = new_priority
+    save_todos(todos)
+    console.print(f"[green]✓[/green] Updated task priority to: [{priority_colors[new_priority]}]{new_priority}[/{priority_colors[new_priority]}]")
+
+@update_app.command("due")
+def update_due_date(
+    tag: str = typer.Argument(..., help="The task's tag (e.g., PROJ-001)"),
+    new_date: Optional[str] = typer.Argument(None, help="New due date. If not provided, will prompt for input.")
+):
+    """
+    Update a task's due date.
+    
+    Arguments:
+        tag: The task's tag (e.g., PROJ-001, case-insensitive)
+        new_date: New due date. If not provided, will prompt for input.
+                 Use 'clear' to remove the due date.
+    
+    Example:
+        todo update due PROJ-001 "next friday"
+        todo update due PROJ-001 clear    # Remove due date
+        todo update due PROJ-001          # Will prompt for due date
+    """
+    todos = load_todos()
+    
+    # Find the task
+    task = next((t for t in todos["tasks"] if t["tag"].lower() == tag.lower()), None)
+    if not task:
+        console.print(f"[red]Error:[/red] Task '{tag}' not found!")
+        return
+    
+    # Show current due date
+    current_due = None
+    if task.get("due_date"):
+        current_due = parser.parse(task["due_date"])
+        console.print(f"\nCurrent due date: {format_due_date(current_due)}")
+    else:
+        console.print("\nNo current due date")
+    
+    if new_date is None:
+        new_date = Prompt.ask(
+            "New due date (optional, e.g., 'tomorrow', 'next friday', '2025-04-20', or 'clear' to remove)",
+            default=""
+        )
+    
+    # Handle clearing the due date
+    if new_date.lower() == "clear":
+        task["due_date"] = None
+        save_todos(todos)
+        console.print("[green]✓[/green] Removed due date")
+        return
+    
+    # Parse and validate new date
+    if new_date:
+        new_due = parse_due_date(new_date)
+        if not new_due:
+            console.print("[red]Error:[/red] Invalid date format")
+            return
+        task["due_date"] = new_due.isoformat()
+        save_todos(todos)
+        console.print(f"[green]✓[/green] Updated due date to: {format_due_date(new_due)}")
+    
+@update_app.command("title")
+def update_title(
+    tag: str = typer.Argument(..., help="The task's tag (e.g., PROJ-001)"),
+    new_title: Optional[str] = typer.Argument(None, help="New title. If not provided, will prompt for input.")
+):
+    """
+    Update a task's title.
+    
+    Arguments:
+        tag: The task's tag (e.g., PROJ-001, case-insensitive)
+        new_title: New title. If not provided, will prompt for input.
+    
+    Example:
+        todo update title PROJ-001 "New task title"
+        todo update title PROJ-001  # Will prompt for title
+    """
+    todos = load_todos()
+    
+    # Find the task
+    task = next((t for t in todos["tasks"] if t["tag"].lower() == tag.lower()), None)
+    if not task:
+        console.print(f"[red]Error:[/red] Task '{tag}' not found!")
+        return
+    
+    # Show current title and get new one
+    console.print(f"\nCurrent title: {task['title']}")
+    
+    if new_title is None:
+        new_title = Prompt.ask("New title", default=task["title"])
+    
+    # Update the title
+    task["title"] = new_title
+    save_todos(todos)
+    console.print(f"[green]✓[/green] Updated task title to: {new_title}")
+
+@update_app.command("description")
+def update_description(
+    tag: str = typer.Argument(..., help="The task's tag (e.g., PROJ-001)"),
+    new_description: Optional[str] = typer.Argument(None, help="New description. If not provided, will prompt for input.")
+):
+    """
+    Update a task's description.
+    
+    Arguments:
+        tag: The task's tag (e.g., PROJ-001, case-insensitive)
+        new_description: New description. If not provided, will prompt for input.
+    
+    Example:
+        todo update description PROJ-001 "New task description"
+        todo update description PROJ-001  # Will prompt for description
+    """
+    todos = load_todos()
+    
+    # Find the task
+    task = next((t for t in todos["tasks"] if t["tag"].lower() == tag.lower()), None)
+    if not task:
+        console.print(f"[red]Error:[/red] Task '{tag}' not found!")
+        return
+    
+    # Show current description and get new one
+    if task.get("description"):
+        console.print(f"\nCurrent description: {task['description']}")
+    else:
+        console.print("\nNo current description")
+    
+    if new_description is None:
+        new_description = Prompt.ask("New description", default=task.get("description", ""))
+    
+    # Update the description
+    task["description"] = new_description
+    save_todos(todos)
+    console.print(f"[green]✓[/green] Updated task description")
+
 @app.command()
 def help(
     command: Optional[str] = typer.Argument(None, help="Command to get help for")
@@ -773,6 +1009,11 @@ def help(
         ("workon <tag>", "Work on a specific task for a given duration (default: 25 minutes)"),
         ("note add <tag>", "Add a new note to a task"),
         ("note reset <tag>", "Reset (clear) all notes from a task"),
+        ("update type <tag>", "Update a task's type"),
+        ("update priority <tag>", "Update a task's priority"),
+        ("update due <tag>", "Update a task's due date"),
+        ("update title <tag>", "Update a task's title"),
+        ("update description <tag>", "Update a task's description"),
         ("help [command]", "Show this help message or detailed help for a command")
     ]
     

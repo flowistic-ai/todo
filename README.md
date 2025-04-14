@@ -11,11 +11,13 @@ A powerful command-line interface todo application with project management featu
 
 ### Task Management
 - Interactive task creation
+- Task types (feature, bugfix, docs, test, refactor, chore) with color coding
 - Priority levels (high, medium, low) with color coding
 - Due dates with natural language support ("tomorrow", "next friday")
 - Task completion tracking
 - Rich terminal output with detailed task information
 - Task notes with chronological history
+- Update task properties after creation
 
 ### Time Tracking
 - Built-in Pomodoro-style timer (default: 25 minutes)
@@ -56,6 +58,7 @@ todo add
 You'll be prompted for:
 - Task title
 - Description (optional)
+- Type (feature/bugfix/docs/test/refactor/chore)
 - Priority (low/medium/high)
 - Due date (optional, supports natural language)
 - Initial note (optional)
@@ -66,7 +69,8 @@ todo list
 ```
 Shows a table with:
 - Task tag (e.g., PROJ-001)
-- Title and description
+- Type (color-coded by category)
+- Title
 - Priority (color-coded)
 - Due date status
 - Time worked
@@ -79,6 +83,7 @@ todo show PROJ-001
 ```
 Shows detailed information about a specific task:
 - Task title and tag
+- Task type
 - Status and priority
 - Description
 - All notes in chronological order
@@ -91,6 +96,30 @@ Shows detailed information about a specific task:
 todo note add PROJ-001 "Note text"     # Add a new note
 todo note add PROJ-001                 # Add note with interactive prompt
 todo note reset PROJ-001               # Clear all notes (with confirmation)
+```
+
+### Update Task Properties
+```bash
+# Update task type
+todo update type PROJ-001 feature       # Set type directly
+todo update type PROJ-001              # Interactive prompt
+
+# Update task priority
+todo update priority PROJ-001 high     # Set priority directly
+todo update priority PROJ-001          # Interactive prompt
+
+# Update due date
+todo update due PROJ-001 "next friday" # Set due date directly
+todo update due PROJ-001 clear         # Remove due date
+todo update due PROJ-001               # Interactive prompt
+
+# Update title
+todo update title PROJ-001 "New title" # Set title directly
+todo update title PROJ-001             # Interactive prompt
+
+# Update description
+todo update description PROJ-001 "New description" # Set description directly
+todo update description PROJ-001                   # Interactive prompt
 ```
 
 ### Work on a Task
@@ -145,6 +174,7 @@ tasks:
   - tag: "PROJ-001"
     title: "Example Task"
     description: "Task description"
+    type: "feature"
     priority: "high"
     created_at: "2025-04-12T20:00:00"
     due_date: "2025-04-19T23:59:59"
