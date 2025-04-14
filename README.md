@@ -111,7 +111,7 @@ todo update priority PROJ-001          # Interactive prompt
 # Update due date
 todo update due PROJ-001 "next friday" # Set due date directly
 todo update due PROJ-001 clear         # Remove due date
-todo update due PROJ-001               # Interactive prompt
+todo update due PROJ-001               # Interactive promp- Update task properties after creationt
 
 # Update title
 todo update title PROJ-001 "New title" # Set title directly
