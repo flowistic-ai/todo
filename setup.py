@@ -13,11 +13,11 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "todo=todo_cli.cli:app",
+            "todo=flowistic_todo.cli:app",
         ],
     },
-    author="Your Name",
-    author_email="your.email@example.com",
+    author="Fayssal El Mofatiche",
+    author_email="fayssal.elmofatiche@flowistic.ai",
     description="A rich CLI todo app with project management and task tagging",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",

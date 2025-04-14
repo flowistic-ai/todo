@@ -86,3 +86,6 @@ dmypy.json
 todo_.yaml
 
 .pypirc
+
+uv.lock
+*.lock

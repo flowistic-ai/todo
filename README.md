@@ -198,7 +198,7 @@ pip install -r requirements.txt
 
 3. Run the CLI:
 ```bash
-python -m todo_cli.cli
+python -m flowistic_todo.cli
 ```
 
 ## License
