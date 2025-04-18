@@ -11,7 +11,7 @@ INSTALL_REQUIRES = [
 
 setup(
     name="flowistic-todo",
-    version="0.1.1",
+    version="0.1.3",
     packages=find_packages(),
     include_package_data=True,
     install_requires=INSTALL_REQUIRES,
@@ -20,8 +20,8 @@ setup(
             "todo=todo.cli:app",
         ],
     },
-    author="Flowistic",
-    author_email="help@flowistic.ai",
+    author="Fayssal El Mofatiche",
+    author_email="fayssal.elmofatiche@flowistic.ai",
     description="A rich CLI todo app with project management and task tagging",
     long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
@@ -34,8 +34,6 @@ setup(
         "Intended Audience :: Developers",
         "License :: OSI Approved :: MIT License",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.7",
-        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Topic :: Software Development :: Libraries :: Python Modules",

@@ -7,7 +7,7 @@ A powerful command-line interface todo application with project management featu
 ### Project Management
 - Project-based task organization with custom prefixes
 - Automatic task numbering (e.g., PROJ-001)
-- Local or global todo lists (per directory or user-wide)
+- Local todo lists (per directory)
 
 ### Task Management
 - Interactive task creation
@@ -50,6 +50,8 @@ Follow the prompts to set:
 - Project name
 - Project description
 - Task prefix (e.g., "PROJ" for PROJ-001)
+
+If the current directory is a git repository, `todo.yaml` will be automatically added to `.gitignore`.
 
 ### Add a Task
 ```bash
@@ -111,7 +113,7 @@ todo update priority PROJ-001          # Interactive prompt
 # Update due date
 todo update due PROJ-001 "next friday" # Set due date directly
 todo update due PROJ-001 clear         # Remove due date
-todo update due PROJ-001               # Interactive promp- Update task properties after creationt
+todo update due PROJ-001               # Interactive prompt
 
 # Update title
 todo update title PROJ-001 "New title" # Set title directly
@@ -159,8 +161,8 @@ todo help <command>      # Show detailed help for a specific command
 ## Configuration
 
 The app stores tasks in YAML format:
-- Local project: `todo.yaml` in the current directory
-- Global fallback: `.todo.yaml` in your home directory
+- `todo.yaml` in the directory where the `todo init` command is run
+- If in a git repository, `todo.yaml` is automatically added to `.gitignore`
 
 ## Task Storage Format
 
@@ -198,7 +200,7 @@ pip install -r requirements.txt
 
 3. Run the CLI:
 ```bash
-python -m flowistic_todo.cli
+python -m todo.cli
 ```
 
 ## License

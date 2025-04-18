@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "flowistic-todo"
-version = "0.1.1"
+version = "0.1.3"
 description = "A rich CLI todo app with project management and task tagging"
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.9"
 license = {text = "MIT"}
 authors = [
     {name = "Fayssal El Mofatiche", email = "fayssal.elmofatiche@flowistic.ai"}
@@ -19,8 +19,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.7",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Topic :: Software Development :: Libraries :: Python Modules",
@@ -38,7 +36,7 @@ Homepage = "https://github.com/flowistic-ai/todo"
 Repository = "https://github.com/flowistic-ai/todo"
 
 [project.scripts]
-todo = "flowistic_todo.cli:app"
+todo = "todo.cli:app"
 
 [dependency-groups]
 dev = [

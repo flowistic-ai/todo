@@ -3,6 +3,7 @@
 import signal
 import sys
 import time
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, List, Dict
@@ -42,19 +43,12 @@ TASK_TYPE_COLORS = {
 
 
 def get_todo_file() -> Path:
-    """Get the todo file path from either the current directory or user's home directory"""
+    """Get the todo file path from the current directory"""
     local_todo = Path("todo.yaml")
     if local_todo.exists():
-        print("Found local todo file. Using that...")
         return local_todo
 
-    # If no local todo file, use one in the user's home directory
-    home_todo = Path.home() / ".todo.yaml"
-    if home_todo.exists():
-        print(f"Found home todo file. Using that...{home_todo}")
-        return home_todo
-
-    print("No todo file found. Creating one...")
+    # No fallback to home directory anymore
     return local_todo
 
 
@@ -146,9 +140,14 @@ def init():
     - Create a new todo.yaml file in the current directory
     - Prompt for project name, description, and task prefix
     - Reset any existing todo list if confirmed
+    - Add todo.yaml to .gitignore if in a git repository
 
     If a todo list already exists, you will be asked for confirmation before resetting.
     """
+    # Update TODO_FILE to ensure we're always using the local file for init
+    global TODO_FILE
+    TODO_FILE = Path("todo.yaml")
+    
     if TODO_FILE.exists():
         if not Confirm.ask("A todo list already exists. Do you want to reset it?"):
             raise typer.Abort()
@@ -171,6 +170,31 @@ def init():
     console.print(f"Project: [bold]{project_name}[/bold]")
     console.print(f"Description: {project_description}")
     console.print(f"Todo file location: {TODO_FILE}")
+    
+    # Check if current directory is a git repository
+    if Path(".git").is_dir():
+        # Check if .gitignore exists
+        gitignore_path = Path(".gitignore")
+        
+        if gitignore_path.exists():
+            # Read existing .gitignore content
+            with open(gitignore_path, "r") as f:
+                gitignore_content = f.read()
+            
+            # Check if todo.yaml is already in .gitignore
+            if "todo.yaml" not in gitignore_content:
+                # Add todo.yaml to .gitignore
+                with open(gitignore_path, "a") as f:
+                    # Add a newline if the file doesn't end with one
+                    if gitignore_content and not gitignore_content.endswith("\n"):
+                        f.write("\n")
+                    f.write("# Todo CLI file\ntodo.yaml\n")
+                console.print("[green]✓[/green] Added todo.yaml to .gitignore")
+        else:
+            # Create new .gitignore file with todo.yaml
+            with open(gitignore_path, "w") as f:
+                f.write("# Todo CLI file\ntodo.yaml\n")
+            console.print("[green]✓[/green] Created .gitignore with todo.yaml")
 
 
 @app.command()
