@@ -1,7 +1,6 @@
-from setuptools import setup, find_packages
-from setuptools.command.install import install
+"""Flowistic Todo CLI."""
 
-VERSION = "0.1.1"
+from setuptools import setup, find_packages
 
 INSTALL_REQUIRES = [
     "typer==0.9.0",
@@ -11,8 +10,8 @@ INSTALL_REQUIRES = [
 ]
 
 setup(
-    name="todo",
-    version=VERSION,
+    name="flowistic-todo",
+    version="0.1.1",
     packages=find_packages(),
     include_package_data=True,
     install_requires=INSTALL_REQUIRES,
@@ -41,7 +40,6 @@ setup(
         "Programming Language :: Python :: 3.10",
         "Topic :: Software Development :: Libraries :: Python Modules",
     ],
-    license="MIT",
     zip_safe=False,
     # For Windows so that todo * commands work ie.
     # - todo add
