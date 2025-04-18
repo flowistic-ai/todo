@@ -21,8 +21,8 @@ setup(
             "todo=todo.cli:app",
         ],
     },
-    author="Fayssal El Mofatiche",
-    author_email="fayssal.elmofatiche@flowistic.ai",
+    author="Flowistic",
+    author_email="help@flowistic.ai",
     description="A rich CLI todo app with project management and task tagging",
     long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
@@ -41,4 +41,10 @@ setup(
         "Programming Language :: Python :: 3.10",
         "Topic :: Software Development :: Libraries :: Python Modules",
     ],
+    license="MIT",
+    zip_safe=False,
+    # For Windows so that todo * commands work ie.
+    # - todo add
+    # - todo status
+    scripts=["bin/todo.cmd"],
 )

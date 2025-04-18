@@ -99,4 +99,5 @@ known-first-party = ["todo"]
 [tool.uv]
 dev-dependencies = [
     "ruff>=0.11.6",
+    "twine>=4.0.2",
 ]
