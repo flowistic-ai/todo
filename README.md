@@ -1,3 +1,5 @@
+![Demo](images/todo.gif)
+
 # Todo CLI
 
 A powerful command-line interface todo application with project management features, time tracking, and rich terminal output.
