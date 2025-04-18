@@ -16,7 +16,7 @@ A powerful command-line interface todo application with project management featu
 - Task types (feature, bugfix, docs, test, refactor, chore) with color coding
 - Priority levels (high, medium, low) with color coding
 - Due dates with natural language support ("tomorrow", "next friday")
-- Task completion tracking
+- Task completion trackincg
 - Rich terminal output with detailed task information
 - Task notes with chronological history
 - Update task properties after creation
