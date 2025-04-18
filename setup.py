@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="flowistic-todo",
+    name="todo",
     version="0.1.1",
     packages=find_packages(),
     include_package_data=True,
@@ -13,7 +13,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "todo=flowistic_todo.cli:app",
+            "todo=todo_package.cli:app",
         ],
     },
     author="Fayssal El Mofatiche",
