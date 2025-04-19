@@ -2,7 +2,7 @@
 
 # Todo CLI
 
-A powerful command-line interface todo application with project management features, time tracking, and rich terminal output.
+A powerful command-line interface todo application with project management features, time tracking, and rich terminal output that plays well with git repos and aims to keep in the flow without the need of juggling between external services.
 
 # Motivation / Executive Summary
 
