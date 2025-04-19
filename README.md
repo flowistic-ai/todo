@@ -1,13 +1,12 @@
 ![Demo](images/todo.gif)
 
-# Motivation / Executive Summary
-
-Efficient task management is essential for productivity in any project. This tool provides a simple, local, and git-friendly way to track todos directly within your project directory. By keeping your todo list version-controlled and out of your repository with `.gitignore`, you can maintain focus and organization without cluttering your codebase or relying on external services, in line with our spirit to enhance productivity and flow at [Flowistic](https://flowistic.ai).
-
-
 # Todo CLI
 
 A powerful command-line interface todo application with project management features, time tracking, and rich terminal output.
+
+# Motivation / Executive Summary
+
+Efficient task management is essential for productivity in any project. This tool provides a simple, local, and git-friendly way to track todos directly within your project directory. By keeping your todo list version-controlled and out of your repository with `.gitignore`, you can maintain focus and organization without cluttering your codebase or relying on external services, in line with our spirit to enhance productivity and flow at [Flowistic](https://flowistic.ai).
 
 ## Features
 
