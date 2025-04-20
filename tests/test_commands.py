@@ -51,3 +51,33 @@ def test_show_command():
     assert result.exit_code == 0
     assert "Show Task" in result.output
     assert "PX-001" in result.output
+
+def test_cancel_command():
+    runner.invoke(app, ["init"], input="Proj\nDesc\nPX\ny\n")
+    runner.invoke(app, ["add"], input="Cancel Task\nDesc\nfeature\nhigh\n\n\n")
+    result = runner.invoke(app, ["cancel", "PX-001"])
+    assert result.exit_code == 0
+    assert "marked as cancelled" in result.output
+    # Show should display status cancelled
+    show_result = runner.invoke(app, ["show", "PX-001"])
+    assert "Status: Cancelled" in show_result.output
+    # List should show cancelled status
+    list_result = runner.invoke(app, ["list"])
+    assert "Cancelled" in list_result.output
+
+def test_delete_command():
+    runner.invoke(app, ["init"], input="Proj\nDesc\nPX\ny\n")
+    runner.invoke(app, ["add"], input="Delete Task\nDesc\nfeature\nhigh\n\n\n")
+    # Confirm task exists
+    list_result = runner.invoke(app, ["list"])
+    assert "Delete Task" in list_result.output
+    # Delete the task
+    result = runner.invoke(app, ["delete", "PX-001"])
+    assert result.exit_code == 0
+    assert "deleted" in result.output
+    # Task should no longer appear
+    list_result = runner.invoke(app, ["list"])
+    assert "Delete Task" not in list_result.output
+    # Show should error
+    show_result = runner.invoke(app, ["show", "PX-001"])
+    assert "not found" in show_result.output

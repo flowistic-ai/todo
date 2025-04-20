@@ -262,19 +262,17 @@ def add():
 
 
 @app.command()
-def list():
+def list(
+    all: bool = typer.Option(
+        False,
+        "-a",
+        "--all",
+        help="Show all tasks, including completed and cancelled"
+    )
+):
     """
-    List all tasks with project information.
-
-    Displays a table with:
-    - Task tag (e.g., PROJ-001)
-    - Type (feature/bugfix/etc.)
-    - Title
-    - Priority (color-coded)
-    - Due date
-    - Time worked
-    - Status
-    - Notes count
+    List all pending tasks with project information.
+    By default, only shows pending tasks. Use -a/--all to show all tasks (including completed and cancelled).
     """
     todos = load_todos()
 
@@ -309,12 +307,17 @@ def list():
             if task["due_date"]
             else datetime.max
         )
-        return (task["completed"], due_date)
+        return (task.get("completed", False), due_date)
 
     sorted_tasks = sorted(todos["tasks"], key=sort_key)
 
     for task in sorted_tasks:
-        status = "[green]✓[/green]" if task["completed"] else "[red]✗[/red]"
+        if not all:
+            if task.get("completed") or task.get("status") == "cancelled":
+                continue
+        status = "[green]✓[/green]" if task.get("completed") else "[yellow]⧖ In Progress[/yellow]"
+        if task.get("status") == "cancelled":
+            status = "[red]✗ Cancelled[/red]"
         priority_color = {"low": "blue", "medium": "yellow", "high": "red"}[
             task["priority"]
         ]
@@ -385,6 +388,36 @@ def complete(tag: str):
             return
 
     console.print(f"[red]Error:[/red] Task with tag [bold]{tag}[/bold] not found!")
+
+
+@app.command()
+def cancel(tag: str = typer.Argument(..., help="The task's tag (e.g., PROJ-001)")):
+    """
+    Cancel a task by its tag (sets status to cancelled).
+    """
+    todos = load_todos()
+    for task in todos["tasks"]:
+        if task["tag"].lower() == tag.lower():
+            task["status"] = "cancelled"
+            save_todos(todos)
+            console.print(f"[yellow]Task [bold]{tag}[/bold] marked as cancelled.[/yellow]")
+            return
+    console.print(f"[red]Error:[/red] Task with tag [bold]{tag}[/bold] not found!")
+
+
+@app.command()
+def delete(tag: str = typer.Argument(..., help="The task's tag (e.g., PROJ-001)")):
+    """
+    Delete a task by its tag (completely removes it from the list).
+    """
+    todos = load_todos()
+    initial_count = len(todos["tasks"])
+    todos["tasks"] = [t for t in todos["tasks"] if t["tag"].lower() != tag.lower()]
+    if len(todos["tasks"]) < initial_count:
+        save_todos(todos)
+        console.print(f"[red]Task [bold]{tag}[/bold] deleted.[/red]")
+    else:
+        console.print(f"[red]Error:[/red] Task with tag [bold]{tag}[/bold] not found!")
 
 
 @app.command()
@@ -614,14 +647,14 @@ def show(tag: str = typer.Argument(..., help="The task's tag (e.g., PROJ-001)"))
     # Type and Priority
     type_color = TASK_TYPE_COLORS[task["type"]]
     console.print(f"Type: [{type_color}]{task['type']}[/{type_color}]")
-    status = (
-        "[green]✓ Completed[/green]"
-        if task["completed"]
-        else "[yellow]⧖ In Progress[/yellow]"
-    )
+    if task.get("status") == "cancelled":
+        console.print("[red]Status: Cancelled[/red]")
+    elif task.get("completed"):
+        console.print("[green]Status: Completed[/green]")
+    else:
+        console.print("[yellow]Status: Pending[/yellow]")
     priority_colors = {"high": "red", "medium": "yellow", "low": "blue"}
     priority = f"[{priority_colors[task['priority']]}]{task['priority']}[/{priority_colors[task['priority']]}]"
-    console.print(f"Status: {status}")
     console.print(f"Priority: {priority}")
 
     # Description
@@ -702,8 +735,10 @@ def calculate_project_stats(todos: Dict) -> Dict:
 
     for task in todos["tasks"]:
         # Task completion stats
-        if task["completed"]:
+        if task.get("completed"):
             stats["completed_tasks"] += 1
+        elif task.get("status") == "cancelled":
+            continue
         else:
             stats["pending_tasks"] += 1
 
@@ -724,7 +759,7 @@ def calculate_project_stats(todos: Dict) -> Dict:
         if "work_sessions" in task:
             task_work_time = get_total_worked_time(task["work_sessions"])
             stats["total_work_time"] += task_work_time
-            if task["completed"]:
+            if task.get("completed"):
                 stats["completed_work_time"] += task_work_time
             else:
                 stats["pending_work_time"] += task_work_time
@@ -1132,7 +1167,7 @@ def help(command: Optional[str] = typer.Argument(None, help="Command to get help
     commands = [
         ("init", "Initialize a new todo list with project details"),
         ("add", "Add a new task interactively"),
-        ("list", "List all tasks with project information"),
+        ("list", "List all pending tasks with project information"),
         ("show <tag>", "Show detailed information about a specific task"),
         ("status", "Show detailed project status and statistics"),
         ("complete <tag>", "Mark a task as complete using its tag (e.g., PROJ-001)"),
@@ -1147,6 +1182,8 @@ def help(command: Optional[str] = typer.Argument(None, help="Command to get help
         ("update due <tag>", "Update a task's due date"),
         ("update title <tag>", "Update a task's title"),
         ("update description <tag>", "Update a task's description"),
+        ("cancel <tag>", "Cancel a task by its tag (sets status to cancelled)"),
+        ("delete <tag>", "Delete a task by its tag (completely removes it from the list)"),
         ("help [command]", "Show this help message or detailed help for a command"),
     ]
 

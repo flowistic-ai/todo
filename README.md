@@ -130,6 +130,15 @@ todo update description PROJ-001 "New description" # Set description directly
 todo update description PROJ-001                   # Interactive prompt
 ```
 
+### Task Cancellation & Deletion
+
+- `todo cancel <tag>`: Mark a task as cancelled. The task remains in your list but its status is shown as cancelled in both `list` and `show` commands.
+    - Example: `todo cancel PROJ-001`
+- `todo delete <tag>`: Permanently remove a task from your todo list. This action cannot be undone.
+    - Example: `todo delete PROJ-002`
+
+Cancelled tasks are excluded from project completion statistics and are clearly indicated in task listings.
+
 ### Work on a Task
 ```bash
 todo workon PROJ-001              # Start a 25-minute work session
@@ -195,6 +204,25 @@ tasks:
         duration: 25
         interrupted: false
 ```
+
+## Running Tests
+
+This project uses [pytest](https://docs.pytest.org/) for testing and [uv](https://github.com/astral-sh/uv) for environment management. To run all tests:
+
+```sh
+uv pip install -r requirements.txt
+uv pytest
+```
+
+If you encounter import errors or tests are not discovered:
+- Make sure you are in the project root directory.
+- Ensure `pytest` is installed in your uv environment.
+- If you see import errors related to `todo`, try:
+  ```sh
+  PYTHONPATH=. uv pytest
+  ```
+
+Test files are located in the `tests/` directory and cover both core logic and CLI commands.
 
 ## Development
 
