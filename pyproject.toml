@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "flowistic-todo"
-version = "0.1.5"
+version = "0.1.7"
 description = "A rich CLI todo app with project management and task tagging"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -29,6 +29,10 @@ dependencies = [
     "pyyaml==6.0.1",
     "dateparser==1.2.0",
     "python-dateutil>=2.9.0.post0",
+    "toml>=0.10.2",
+    "dash>=3.0.4",
+    "dash-bootstrap-components>=2.0.2",
+    "dash-mantine-components>=1.2.0",
 ]
 
 [project.urls]

@@ -24,6 +24,7 @@ from rich.progress import (
 )
 from rich.text import Text
 from dateutil import parser
+from todo.board import launch_board
 
 app = typer.Typer()
 console = Console()
@@ -209,42 +210,34 @@ def add():
     - Priority (low/medium/high)
     - Due date (optional, supports natural language)
     - Initial note (optional)
+    - Tags (comma-separated, optional)
 
-    The task will be automatically tagged using the project prefix.
+    The task will be automatically assigned a task id using the project prefix.
     Example: For project prefix 'PROJ', first task will be 'PROJ-001'
     """
     todos = load_todos()
 
     if not todos["project"]["prefix"]:
         console.print(
-            "[red]Error:[/red] Project not initialized. Please run 'todo init' first."
+            "[red]Error:[/red] Project prefix not set. Run 'todo init' first."
         )
-        return
+        raise typer.Abort()
 
     title = Prompt.ask("Task title")
-    description = Prompt.ask("Description (optional)", default="")
+    description = Prompt.ask("Description", default="")
     task_type = Prompt.ask("Type", choices=TASK_TYPES, default="feature")
-    priority = Prompt.ask(
-        "Priority", choices=["low", "medium", "high"], default="medium"
-    )
-    due_date_str = Prompt.ask(
-        "Due date (optional, e.g., 'tomorrow', 'next friday', '2025-04-20')", default=""
-    )
+    priority = Prompt.ask("Priority", choices=["low", "medium", "high"], default="medium")
+    due_date_str = Prompt.ask("Due date (optional)", default="")
+    due_date = parse_due_date(due_date_str) if due_date_str else None
     notes = Prompt.ask("Initial note (optional)", default="")
+    tags_str = Prompt.ask("Tags (comma-separated, optional)", default="")
+    tags = [tag.strip() for tag in tags_str.split(",") if tag.strip()] if tags_str else []
 
-    due_date = parse_due_date(due_date_str)
-    if due_date_str and not due_date:
-        console.print(
-            "[yellow]Warning:[/yellow] Could not parse due date, task will be created without one."
-        )
-
-    # Generate task tag
-    task_number = todos["project"]["next_task_number"]
-    task_tag = f"{todos['project']['prefix']}-{task_number:03d}"
+    task_id = f"{todos['project']['prefix']}-{todos['project']['next_task_number']:03d}"
     todos["project"]["next_task_number"] += 1
 
     task = {
-        "tag": task_tag,
+        "task_id": task_id,
         "title": title,
         "description": description,
         "type": task_type,
@@ -254,11 +247,58 @@ def add():
         "completed": False,
         "work_sessions": [],
         "notes": [notes] if notes else [],
+        "tags": tags,
     }
 
     todos["tasks"].append(task)
     save_todos(todos)
-    console.print(f"[green]✓[/green] Task [bold]{task_tag}[/bold] added successfully!")
+    console.print(f"[green]✓[/green] Task [bold]{task_id}[/bold] added successfully!")
+
+
+@app.command()
+def tags():
+    """
+    List all unique tags across all tasks, along with the number of tasks for each tag.
+    """
+    todos = load_todos()
+    tag_counts = {}
+    for task in todos["tasks"]:
+        for tag in task.get("tags", []):
+            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+    if tag_counts:
+        console.print("[bold]Tags:[/bold]")
+        for t in sorted(tag_counts):
+            console.print(f"- {t} [dim]({tag_counts[t]} task{'s' if tag_counts[t] != 1 else ''})[/dim]")
+    else:
+        console.print("[yellow]No tags found.[/yellow]")
+
+
+@app.command()
+def tag_tasks(tag: str):
+    """
+    List all tasks associated with a given tag.
+    """
+    todos = load_todos()
+    filtered = [t for t in todos["tasks"] if tag in t.get("tags", [])]
+    if not filtered:
+        console.print(f"[yellow]No tasks found with tag '{tag}'.[/yellow]")
+        return
+    table = Table(show_header=True, header_style="bold magenta")
+    table.add_column("Task ID")
+    table.add_column("Title")
+    table.add_column("Type")
+    table.add_column("Priority")
+    table.add_column("Due Date")
+    for task in filtered:
+        due_date = format_due_date(parser.parse(task["due_date"])) if task.get("due_date") else "-"
+        table.add_row(
+            task["task_id"],
+            task["title"],
+            task["type"],
+            task["priority"],
+            due_date,
+        )
+    console.print(table)
 
 
 @app.command()
@@ -268,365 +308,82 @@ def list(
         "-a",
         "--all",
         help="Show all tasks, including completed and cancelled"
-    )
+    ),
+    tag: Optional[str] = typer.Option(
+        None,
+        "--tag",
+        help="Filter tasks by tag"
+    ),
 ):
     """
     List all pending tasks with project information.
     By default, only shows pending tasks. Use -a/--all to show all tasks (including completed and cancelled).
+    Use --tag to filter tasks by a specific tag.
+    Displays tags for each task.
     """
     todos = load_todos()
 
     # Show project info
     if todos["project"]["name"]:
-        console.print(f"\n[bold]Project:[/bold] {todos['project']['name']}")
-        console.print(f"[bold]Description:[/bold] {todos['project']['description']}\n")
+        console.print(f"\n[bold blue]Project:[/bold blue] {todos['project']['name']}")
+        console.print(f"[dim]Prefix:[/dim] {todos['project']['prefix']}\n")
 
-    if not todos["tasks"]:
-        console.print("[yellow]No tasks found![/yellow]")
+    tasks = todos["tasks"]
+    if tag:
+        tasks = [t for t in tasks if tag in t.get("tags", [])]
+
+    # Filter tasks
+    if not all:
+        tasks = [t for t in tasks if not t.get("completed", False) and t.get("status", "") != "cancelled"]
+
+    if not tasks:
+        console.print("[yellow]No tasks found.[/yellow]")
         return
 
-    table = Table(
-        "Tag",
-        "Type",
-        "Title",
-        "Priority",
-        "Due Date",
-        "Time Worked",
-        "Status",
-        "Notes",
-        title="Tasks",
-        expand=True,
-    )
+    table = Table(show_header=True, header_style="bold magenta")
+    table.add_column("Task ID")
+    table.add_column("Type")
+    table.add_column("Title")
+    table.add_column("Priority")
+    table.add_column("Due Date")
+    table.add_column("Time Worked")
+    table.add_column("Status")
+    table.add_column("Notes")
+    table.add_column("Tags")
 
-    # Sort tasks by due date and completion status
-    def sort_key(task):
-        if "due_date" not in task:
-            task["due_date"] = None
-        due_date = (
-            datetime.fromisoformat(task["due_date"])
-            if task["due_date"]
-            else datetime.max
+    for task in tasks:
+        due_date_str = format_due_date(parser.parse(task["due_date"])) if task.get("due_date") else "-"
+        total_time = format_duration(sum(ws["duration"] for ws in task.get("work_sessions", [])))
+        status = (
+            "[green]Complete[/green]" if task.get("completed") else
+            "[yellow]Cancelled[/yellow]" if task.get("status") == "cancelled" else
+            "[cyan]Pending[/cyan]"
         )
-        return (task.get("completed", False), due_date)
-
-    sorted_tasks = sorted(todos["tasks"], key=sort_key)
-
-    for task in sorted_tasks:
-        if not all:
-            if task.get("completed") or task.get("status") == "cancelled":
-                continue
-        status = "[green]✓[/green]" if task.get("completed") else "[yellow]⧖ In Progress[/yellow]"
-        if task.get("status") == "cancelled":
-            status = "[red]✗ Cancelled[/red]"
-        priority_color = {"low": "blue", "medium": "yellow", "high": "red"}[
-            task["priority"]
-        ]
-
-        due_date_str = ""
-        due_date_style = ""
-        if task.get("due_date"):
-            due_date = parser.parse(task["due_date"])
-            now = datetime.now()
-            due_date_str = format_due_date(due_date)
-
-            if due_date < now:
-                due_date_style = "red"
-            elif due_date < now + timedelta(days=2):
-                due_date_style = "yellow"
-            else:
-                due_date_style = "green"
-
-        # Calculate total time worked
-        total_time = "0m"
-        if "work_sessions" in task:
-            minutes = get_total_worked_time(task["work_sessions"])
-            total_time = format_duration(minutes)
-
-        # Format notes count if they exist
-        notes_text = ""
-        if task.get("notes"):
-            note_count = len(task["notes"])
-            notes_text = f"[dim]{note_count} note{'s' if note_count != 1 else ''}[/dim]"
-
-        # Format task type with color
+        note_count = len(task.get("notes", []))
+        notes_text = f"[dim]{note_count} note{'s' if note_count != 1 else ''}[/dim]"
         type_color = TASK_TYPE_COLORS[task["type"]]
-
+        tags_text = ", ".join(task.get("tags", [])) if task.get("tags") else "-"
         table.add_row(
-            task["tag"],
+            task["task_id"],
             Text(task["type"], style=type_color),
             Text(task["title"], style="bold"),
-            Text(task["priority"], style=priority_color),
-            Text(due_date_str, style=due_date_style) if due_date_str else "",
+            Text(task["priority"], style="yellow" if task["priority"] == "high" else "white"),
+            Text(due_date_str, style="red" if due_date_str.startswith("Overdue") else "white"),
             total_time,
             status,
             notes_text,
+            tags_text,
         )
-
     console.print(table)
 
 
 @app.command()
-def complete(tag: str):
-    """
-    Mark a task as complete by its tag.
-
-    Arguments:
-        tag: The task's tag (e.g., PROJ-001, case-insensitive)
-
-    Example:
-        todo complete PROJ-001
-    """
-    todos = load_todos()
-
-    for task in todos["tasks"]:
-        if task["tag"].lower() == tag.lower():
-            task["completed"] = True
-            save_todos(todos)
-            console.print(
-                f"[green]✓[/green] Task [bold]{tag}[/bold] marked as complete!"
-            )
-            return
-
-    console.print(f"[red]Error:[/red] Task with tag [bold]{tag}[/bold] not found!")
-
-
-@app.command()
-def cancel(tag: str = typer.Argument(..., help="The task's tag (e.g., PROJ-001)")):
-    """
-    Cancel a task by its tag (sets status to cancelled).
-    """
-    todos = load_todos()
-    for task in todos["tasks"]:
-        if task["tag"].lower() == tag.lower():
-            task["status"] = "cancelled"
-            save_todos(todos)
-            console.print(f"[yellow]Task [bold]{tag}[/bold] marked as cancelled.[/yellow]")
-            return
-    console.print(f"[red]Error:[/red] Task with tag [bold]{tag}[/bold] not found!")
-
-
-@app.command()
-def delete(tag: str = typer.Argument(..., help="The task's tag (e.g., PROJ-001)")):
-    """
-    Delete a task by its tag (completely removes it from the list).
-    """
-    todos = load_todos()
-    initial_count = len(todos["tasks"])
-    todos["tasks"] = [t for t in todos["tasks"] if t["tag"].lower() != tag.lower()]
-    if len(todos["tasks"]) < initial_count:
-        save_todos(todos)
-        console.print(f"[red]Task [bold]{tag}[/bold] deleted.[/red]")
-    else:
-        console.print(f"[red]Error:[/red] Task with tag [bold]{tag}[/bold] not found!")
-
-
-@app.command()
-def workon(
-    tag: str,
-    duration: Optional[int] = typer.Option(
-        25, "--duration", "-d", help="Duration in minutes"
-    ),
-):
-    """
-    Work on a specific task with an interactive timer.
-
-    Arguments:
-        tag: The task's tag (e.g., PROJ-001, case-insensitive)
-        duration: Work session duration in minutes (default: 25)
-
-    Features:
-    - Interactive progress bar with time tracking
-    - Records work sessions in task history
-    - Handles interruptions gracefully (Ctrl+C)
-
-    Example:
-        todo workon PROJ-001
-        todo workon PROJ-001 --duration 45
-    """
-    todos = load_todos()
-
-    # Find the task
-    task = None
-    for t in todos["tasks"]:
-        if t["tag"].lower() == tag.lower():
-            task = t
-            break
-
-    if not task:
-        console.print(f"[red]Error:[/red] Task with tag [bold]{tag}[/bold] not found!")
-        return
-
-    # Initialize work_sessions if it doesn't exist
-    if "work_sessions" not in task:
-        task["work_sessions"] = []
-
-    # Show task info
-    console.print(f"\n[bold]Working on:[/bold] {task['title']} ({task['tag']})")
-    if task["work_sessions"]:
-        total_time = get_total_worked_time(task["work_sessions"])
-        console.print(f"[dim]Total time worked: {format_duration(total_time)}[/dim]")
-
-    # Create progress bar
-    total_seconds = duration * 60
-
-    try:
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-            TimeElapsedColumn(),
-            TimeRemainingColumn(),
-            console=console,
-        ) as progress:
-            work_task = progress.add_task(
-                f"[cyan]Working on {task['tag']}...",
-                total=total_seconds,
-            )
-
-            start_time = datetime.now()
-
-            # Setup signal handler for clean exit
-            def handle_interrupt(signum, frame):
-                progress.stop()
-                console.print("\n[yellow]Work session interrupted![/yellow]")
-                actual_duration = int(
-                    (datetime.now() - start_time).total_seconds() / 60
-                )
-                if actual_duration > 0:
-                    save_work_session(todos, task, actual_duration, interrupted=True)
-                sys.exit(0)
-
-            signal.signal(signal.SIGINT, handle_interrupt)
-
-            while not progress.finished:
-                progress.update(work_task, advance=1)
-                time.sleep(1)
-
-            # Save the work session
-            save_work_session(todos, task, duration)
-
-            console.print(
-                f"\n[green]✓[/green] Completed {format_duration(duration)} work session!"
-            )
-
-    except KeyboardInterrupt:
-        # Handle Ctrl+C gracefully
-        console.print("\n[yellow]Work session interrupted![/yellow]")
-        actual_duration = int((datetime.now() - start_time).total_seconds() / 60)
-        if actual_duration > 0:
-            save_work_session(todos, task, actual_duration, interrupted=True)
-
-
-def save_work_session(
-    todos: Dict, task: Dict, duration: int, interrupted: bool = False
-):
-    """Save a work session to the task"""
-    session = {
-        "started_at": datetime.now().isoformat(),
-        "duration": duration,
-        "interrupted": interrupted,
-    }
-    task["work_sessions"].append(session)
-    save_todos(todos)
-
-
-# Create a note command group
-notes_app = typer.Typer(help="Manage task notes")
-app.add_typer(notes_app, name="note")
-
-
-@notes_app.command("add")
-def add_note(
-    tag: str = typer.Argument(..., help="The task's tag (e.g., PROJ-001)"),
-    text: Optional[str] = typer.Argument(
-        None, help="Note text. If not provided, will prompt for input."
-    ),
-):
-    """
-    Add a new note to a task. Notes are stored as a chronological list.
-
-    Arguments:
-        tag: The task's tag (e.g., PROJ-001, case-insensitive)
-        text: Note text (optional). If not provided, will prompt for input.
-
-    Example:
-        todo note add PROJ-001 "Remember to update documentation"
-        todo note add PROJ-001  # Will prompt for note text
-    """
-    todos = load_todos()
-
-    # Find the task
-    task = next((t for t in todos["tasks"] if t["tag"].lower() == tag.lower()), None)
-    if not task:
-        console.print(f"[red]Error:[/red] Task '{tag}' not found!")
-        return
-
-    # Initialize notes list if it doesn't exist
-    if "notes" not in task:
-        task["notes"] = []
-
-    # If no text provided, show existing notes and prompt for new one
-    if text is None:
-        if task["notes"]:
-            console.print("\nExisting notes:")
-            for i, note in enumerate(task["notes"], 1):
-                console.print(f"[dim]{i}.[/dim] {note}")
-            console.print()
-        text = Prompt.ask("Enter new note")
-
-    # Add the new note to the list
-    if text:
-        task["notes"].append(text)
-        save_todos(todos)
-        console.print(f"[green]✓[/green] Added new note to task {tag}")
-
-
-@notes_app.command("reset")
-def reset_notes(tag: str = typer.Argument(..., help="The task's tag (e.g., PROJ-001)")):
-    """
-    Reset (clear) all notes from a task.
-
-    Arguments:
-        tag: The task's tag (e.g., PROJ-001, case-insensitive)
-
-    Example:
-        todo note reset PROJ-001
-    """
-    todos = load_todos()
-
-    # Find the task
-    task = next((t for t in todos["tasks"] if t["tag"].lower() == tag.lower()), None)
-    if not task:
-        console.print(f"[red]Error:[/red] Task '{tag}' not found!")
-        return
-
-    # Check if task has any notes
-    if not task.get("notes"):
-        console.print("[yellow]Task has no notes to reset.[/yellow]")
-        return
-
-    # Show current notes
-    console.print("\nCurrent notes:")
-    for i, note in enumerate(task["notes"], 1):
-        console.print(f"[dim]{i}.[/dim] {note}")
-
-    # Confirm reset
-    if Confirm.ask("\nAre you sure you want to reset all notes?", default=False):
-        task["notes"] = []
-        save_todos(todos)
-        console.print("[green]✓[/green] All notes have been cleared.")
-    else:
-        console.print("Operation cancelled.")
-
-
-@app.command()
-def show(tag: str = typer.Argument(..., help="The task's tag (e.g., PROJ-001)")):
+def show(task_id: str = typer.Argument(..., help="The task id (e.g., PROJ-001)")):
     """
     Show detailed information about a specific task.
 
     Arguments:
-        tag: The task's tag (e.g., PROJ-001, case-insensitive)
+        task_id: The task id (e.g., PROJ-001, case-insensitive)
 
     Example:
         todo show PROJ-001
@@ -634,14 +391,14 @@ def show(tag: str = typer.Argument(..., help="The task's tag (e.g., PROJ-001)"))
     todos = load_todos()
 
     # Find the task
-    task = next((t for t in todos["tasks"] if t["tag"].lower() == tag.lower()), None)
+    task = next((t for t in todos["tasks"] if t["task_id"].lower() == task_id.lower()), None)
     if not task:
-        console.print(f"[red]Error:[/red] Task '{tag}' not found!")
+        console.print(f"[red]Error:[/red] Task '{task_id}' not found!")
         return
 
     # Create a panel to display task information
     console.print(
-        f"\n[bold blue]{task['tag']}[/bold blue]: [bold]{task['title']}[/bold]"
+        f"\n[bold blue]{task['task_id']}[/bold blue]: [bold]{task['title']}[/bold]"
     )
 
     # Type and Priority
@@ -710,6 +467,261 @@ def show(tag: str = typer.Argument(..., help="The task's tag (e.g., PROJ-001)"))
     # Created Date
     created_at = parser.parse(task["created_at"])
     console.print(f"\nCreated: {created_at.strftime('%Y-%m-%d %H:%M')}")
+
+
+@app.command()
+def complete(task_id: str):
+    """
+    Mark a task as complete by its task id.
+
+    Arguments:
+        task_id: The task id (e.g., PROJ-001, case-insensitive)
+
+    Example:
+        todo complete PROJ-001
+    """
+    todos = load_todos()
+
+    for task in todos["tasks"]:
+        if task["task_id"].lower() == task_id.lower():
+            task["completed"] = True
+            save_todos(todos)
+            console.print(
+                f"[green]✓[/green] Task [bold]{task_id}[/bold] marked as complete!"
+            )
+            return
+
+    console.print(f"[red]Error:[/red] Task with id [bold]{task_id}[/bold] not found!")
+
+
+@app.command()
+def cancel(task_id: str = typer.Argument(..., help="The task id (e.g., PROJ-001)")):
+    """
+    Cancel a task by its task id (sets status to cancelled).
+    """
+    todos = load_todos()
+    for task in todos["tasks"]:
+        if task["task_id"].lower() == task_id.lower():
+            task["status"] = "cancelled"
+            save_todos(todos)
+            console.print(f"[yellow]Task [bold]{task_id}[/bold] marked as cancelled.[/yellow]")
+            return
+    console.print(f"[red]Error:[/red] Task with id [bold]{task_id}[/bold] not found!")
+
+
+@app.command()
+def delete(task_id: str = typer.Argument(..., help="The task id (e.g., PROJ-001)")):
+    """
+    Delete a task by its task id (completely removes it from the list).
+    """
+    todos = load_todos()
+    initial_count = len(todos["tasks"])
+    todos["tasks"] = [t for t in todos["tasks"] if t["task_id"].lower() != task_id.lower()]
+    if len(todos["tasks"]) < initial_count:
+        save_todos(todos)
+        console.print(f"[red]Task [bold]{task_id}[/bold] deleted.[/red]")
+    else:
+        console.print(f"[red]Error:[/red] Task with id [bold]{task_id}[/bold] not found!")
+
+
+@app.command()
+def workon(
+    task_id: str,
+    duration: Optional[int] = typer.Option(
+        25, "--duration", "-d", help="Duration in minutes"
+    ),
+):
+    """
+    Work on a specific task with an interactive timer.
+
+    Arguments:
+        task_id: The task id (e.g., PROJ-001, case-insensitive)
+        duration: Work session duration in minutes (default: 25)
+
+    Features:
+    - Interactive progress bar with time tracking
+    - Records work sessions in task history
+    - Handles interruptions gracefully (Ctrl+C)
+
+    Example:
+        todo workon PROJ-001
+        todo workon PROJ-001 --duration 45
+    """
+    todos = load_todos()
+
+    # Find the task
+    task = None
+    for t in todos["tasks"]:
+        if t["task_id"].lower() == task_id.lower():
+            task = t
+            break
+
+    if not task:
+        console.print(f"[red]Error:[/red] Task with id [bold]{task_id}[/bold] not found!")
+        return
+
+    # Initialize work_sessions if it doesn't exist
+    if "work_sessions" not in task:
+        task["work_sessions"] = []
+
+    # Show task info
+    console.print(f"\n[bold]Working on:[/bold] {task['title']} ({task['task_id']})")
+    if task["work_sessions"]:
+        total_time = get_total_worked_time(task["work_sessions"])
+        console.print(f"[dim]Total time worked: {format_duration(total_time)}[/dim]")
+
+    # Create progress bar
+    total_seconds = duration * 60
+
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+            console=console,
+        ) as progress:
+            work_task = progress.add_task(
+                f"[cyan]Working on {task['task_id']}...",
+                total=total_seconds,
+            )
+
+            start_time = datetime.now()
+
+            # Setup signal handler for clean exit
+            def handle_interrupt(signum, frame):
+                progress.stop()
+                console.print("\n[yellow]Work session interrupted![/yellow]")
+                actual_duration = int(
+                    (datetime.now() - start_time).total_seconds() / 60
+                )
+                if actual_duration > 0:
+                    save_work_session(todos, task, actual_duration, interrupted=True)
+                sys.exit(0)
+
+            signal.signal(signal.SIGINT, handle_interrupt)
+
+            while not progress.finished:
+                progress.update(work_task, advance=1)
+                time.sleep(1)
+
+            # Save the work session
+            save_work_session(todos, task, duration)
+
+            console.print(
+                f"\n[green]✓[/green] Completed {format_duration(duration)} work session!"
+            )
+
+    except KeyboardInterrupt:
+        # Handle Ctrl+C gracefully
+        console.print("\n[yellow]Work session interrupted![/yellow]")
+        actual_duration = int((datetime.now() - start_time).total_seconds() / 60)
+        if actual_duration > 0:
+            save_work_session(todos, task, actual_duration, interrupted=True)
+
+
+def save_work_session(
+    todos: Dict, task: Dict, duration: int, interrupted: bool = False
+):
+    """Save a work session to the task"""
+    session = {
+        "started_at": datetime.now().isoformat(),
+        "duration": duration,
+        "interrupted": interrupted,
+    }
+    task["work_sessions"].append(session)
+    save_todos(todos)
+
+
+# Create a note command group
+notes_app = typer.Typer(help="Manage task notes")
+app.add_typer(notes_app, name="note")
+
+
+@notes_app.command("add")
+def add_note(
+    task_id: str = typer.Argument(..., help="The task id (e.g., PROJ-001)"),
+    text: Optional[str] = typer.Argument(
+        None, help="Note text. If not provided, will prompt for input."
+    ),
+):
+    """
+    Add a new note to a task. Notes are stored as a chronological list.
+
+    Arguments:
+        task_id: The task id (e.g., PROJ-001, case-insensitive)
+        text: Note text (optional). If not provided, will prompt for input.
+
+    Example:
+        todo note add PROJ-001 "Remember to update documentation"
+        todo note add PROJ-001  # Will prompt for note text
+    """
+    todos = load_todos()
+
+    # Find the task
+    task = next((t for t in todos["tasks"] if t["task_id"].lower() == task_id.lower()), None)
+    if not task:
+        console.print(f"[red]Error:[/red] Task '{task_id}' not found!")
+        return
+
+    # Initialize notes list if it doesn't exist
+    if "notes" not in task:
+        task["notes"] = []
+
+    # If no text provided, show existing notes and prompt for new one
+    if text is None:
+        if task["notes"]:
+            console.print("\nExisting notes:")
+            for i, note in enumerate(task["notes"], 1):
+                console.print(f"[dim]{i}.[/dim] {note}")
+            console.print()
+        text = Prompt.ask("Enter new note")
+
+    # Add the new note to the list
+    if text:
+        task["notes"].append(text)
+        save_todos(todos)
+        console.print(f"[green]✓[/green] Added new note to task {task_id}")
+
+
+@notes_app.command("reset")
+def reset_notes(task_id: str = typer.Argument(..., help="The task id (e.g., PROJ-001)")):
+    """
+    Reset (clear) all notes from a task.
+
+    Arguments:
+        task_id: The task id (e.g., PROJ-001, case-insensitive)
+
+    Example:
+        todo note reset PROJ-001
+    """
+    todos = load_todos()
+
+    # Find the task
+    task = next((t for t in todos["tasks"] if t["task_id"].lower() == task_id.lower()), None)
+    if not task:
+        console.print(f"[red]Error:[/red] Task '{task_id}' not found!")
+        return
+
+    # Check if task has any notes
+    if not task.get("notes"):
+        console.print("[yellow]Task has no notes to reset.[/yellow]")
+        return
+
+    # Show current notes
+    console.print("\nCurrent notes:")
+    for i, note in enumerate(task["notes"], 1):
+        console.print(f"[dim]{i}.[/dim] {note}")
+
+    # Confirm reset
+    if Confirm.ask("\nAre you sure you want to reset all notes?", default=False):
+        task["notes"] = []
+        save_todos(todos)
+        console.print("[green]✓[/green] All notes have been cleared.")
+    else:
+        console.print("Operation cancelled.")
 
 
 def calculate_project_stats(todos: Dict) -> Dict:
@@ -886,7 +898,7 @@ app.add_typer(update_app, name="update")
 
 @update_app.command("type")
 def update_type(
-    tag: str = typer.Argument(..., help="The task's tag (e.g., PROJ-001)"),
+    task_id: str = typer.Argument(..., help="The task id (e.g., PROJ-001)"),
     new_type: Optional[str] = typer.Argument(
         None, help="New task type. If not provided, will prompt for input."
     ),
@@ -895,7 +907,7 @@ def update_type(
     Update a task's type.
 
     Arguments:
-        tag: The task's tag (e.g., PROJ-001, case-insensitive)
+        task_id: The task id (e.g., PROJ-001, case-insensitive)
         new_type: New task type. If not provided, will prompt for input.
 
     Example:
@@ -905,9 +917,9 @@ def update_type(
     todos = load_todos()
 
     # Find the task
-    task = next((t for t in todos["tasks"] if t["tag"].lower() == tag.lower()), None)
+    task = next((t for t in todos["tasks"] if t["task_id"].lower() == task_id.lower()), None)
     if not task:
-        console.print(f"[red]Error:[/red] Task '{tag}' not found!")
+        console.print(f"[red]Error:[/red] Task '{task_id}' not found!")
         return
 
     # Show current type and get new one
@@ -934,7 +946,7 @@ def update_type(
 
 @update_app.command("priority")
 def update_priority(
-    tag: str = typer.Argument(..., help="The task's tag (e.g., PROJ-001)"),
+    task_id: str = typer.Argument(..., help="The task id (e.g., PROJ-001)"),
     new_priority: Optional[str] = typer.Argument(
         None, help="New priority. If not provided, will prompt for input."
     ),
@@ -943,7 +955,7 @@ def update_priority(
     Update a task's priority.
 
     Arguments:
-        tag: The task's tag (e.g., PROJ-001, case-insensitive)
+        task_id: The task id (e.g., PROJ-001, case-insensitive)
         new_priority: New priority. If not provided, will prompt for input.
 
     Example:
@@ -953,9 +965,9 @@ def update_priority(
     todos = load_todos()
 
     # Find the task
-    task = next((t for t in todos["tasks"] if t["tag"].lower() == tag.lower()), None)
+    task = next((t for t in todos["tasks"] if t["task_id"].lower() == task_id.lower()), None)
     if not task:
-        console.print(f"[red]Error:[/red] Task '{tag}' not found!")
+        console.print(f"[red]Error:[/red] Task '{task_id}' not found!")
         return
 
     # Show current priority and get new one
@@ -985,7 +997,7 @@ def update_priority(
 
 @update_app.command("due")
 def update_due_date(
-    tag: str = typer.Argument(..., help="The task's tag (e.g., PROJ-001)"),
+    task_id: str = typer.Argument(..., help="The task id (e.g., PROJ-001)"),
     new_date: Optional[str] = typer.Argument(
         None, help="New due date. If not provided, will prompt for input."
     ),
@@ -994,27 +1006,26 @@ def update_due_date(
     Update a task's due date.
 
     Arguments:
-        tag: The task's tag (e.g., PROJ-001, case-insensitive)
+        task_id: The task id (e.g., PROJ-001, case-insensitive)
         new_date: New due date. If not provided, will prompt for input.
                  Use 'clear' to remove the due date.
 
     Example:
         todo update due PROJ-001 "next friday"
         todo update due PROJ-001 clear    # Remove due date
-        todo update due PROJ-001          # Will prompt for due date
     """
     todos = load_todos()
 
     # Find the task
-    task = next((t for t in todos["tasks"] if t["tag"].lower() == tag.lower()), None)
+    task = next((t for t in todos["tasks"] if t["task_id"].lower() == task_id.lower()), None)
     if not task:
-        console.print(f"[red]Error:[/red] Task '{tag}' not found!")
+        console.print(f"[red]Error:[/red] Task '{task_id}' not found!")
         return
 
     # Show current due date
     current_due = None
     if task.get("due_date"):
-        current_due = parser.parse(task["due_date"])
+        current_due = datetime.fromisoformat(task["due_date"])
         console.print(f"\nCurrent due date: {format_due_date(current_due)}")
     else:
         console.print("\nNo current due date")
@@ -1047,7 +1058,7 @@ def update_due_date(
 
 @update_app.command("title")
 def update_title(
-    tag: str = typer.Argument(..., help="The task's tag (e.g., PROJ-001)"),
+    task_id: str = typer.Argument(..., help="The task id (e.g., PROJ-001)"),
     new_title: Optional[str] = typer.Argument(
         None, help="New title. If not provided, will prompt for input."
     ),
@@ -1056,7 +1067,7 @@ def update_title(
     Update a task's title.
 
     Arguments:
-        tag: The task's tag (e.g., PROJ-001, case-insensitive)
+        task_id: The task id (e.g., PROJ-001, case-insensitive)
         new_title: New title. If not provided, will prompt for input.
 
     Example:
@@ -1066,9 +1077,9 @@ def update_title(
     todos = load_todos()
 
     # Find the task
-    task = next((t for t in todos["tasks"] if t["tag"].lower() == tag.lower()), None)
+    task = next((t for t in todos["tasks"] if t["task_id"].lower() == task_id.lower()), None)
     if not task:
-        console.print(f"[red]Error:[/red] Task '{tag}' not found!")
+        console.print(f"[red]Error:[/red] Task '{task_id}' not found!")
         return
 
     # Show current title and get new one
@@ -1085,7 +1096,7 @@ def update_title(
 
 @update_app.command("description")
 def update_description(
-    tag: str = typer.Argument(..., help="The task's tag (e.g., PROJ-001)"),
+    task_id: str = typer.Argument(..., help="The task id (e.g., PROJ-001)"),
     new_description: Optional[str] = typer.Argument(
         None, help="New description. If not provided, will prompt for input."
     ),
@@ -1094,7 +1105,7 @@ def update_description(
     Update a task's description.
 
     Arguments:
-        tag: The task's tag (e.g., PROJ-001, case-insensitive)
+        task_id: The task id (e.g., PROJ-001, case-insensitive)
         new_description: New description. If not provided, will prompt for input.
 
     Example:
@@ -1104,9 +1115,9 @@ def update_description(
     todos = load_todos()
 
     # Find the task
-    task = next((t for t in todos["tasks"] if t["tag"].lower() == tag.lower()), None)
+    task = next((t for t in todos["tasks"] if t["task_id"].lower() == task_id.lower()), None)
     if not task:
-        console.print(f"[red]Error:[/red] Task '{tag}' not found!")
+        console.print(f"[red]Error:[/red] Task '{task_id}' not found!")
         return
 
     # Show current description and get new one
@@ -1124,6 +1135,87 @@ def update_description(
     task["description"] = new_description
     save_todos(todos)
     console.print(f"[green]✓[/green] Updated task description")
+
+
+@app.command()
+def search(query: str = typer.Argument(..., help="Search query (matches title, description, or notes)")):
+    """
+    Search tasks by title, description, or notes and list relevant tasks.
+    The search is case-insensitive and matches substrings.
+    Displays results in the same table format as the list command.
+    """
+    todos = load_todos()
+    query_lower = query.lower()
+    matched_tasks = []
+    for task in todos["tasks"]:
+        if (
+            query_lower in (task.get("title") or "").lower()
+            or query_lower in (task.get("description") or "").lower()
+            or any(query_lower in (note or "").lower() for note in task.get("notes", []))
+        ):
+            matched_tasks.append(task)
+    if not matched_tasks:
+        console.print(f"[yellow]No tasks found matching '{query}'.[/yellow]")
+        return
+    table = Table(show_header=True, header_style="bold magenta")
+    table.add_column("Task ID")
+    table.add_column("Type")
+    table.add_column("Title")
+    table.add_column("Priority")
+    table.add_column("Due Date")
+    table.add_column("Time Worked")
+    table.add_column("Status")
+    table.add_column("Notes")
+    table.add_column("Tags")
+    for task in matched_tasks:
+        due_date_str = format_due_date(parser.parse(task["due_date"])) if task.get("due_date") else "-"
+        total_time = format_duration(sum(ws["duration"] for ws in task.get("work_sessions", [])))
+        status = (
+            "[green]Complete[/green]" if task.get("completed") else
+            "[yellow]Cancelled[/yellow]" if task.get("status") == "cancelled" else
+            "[cyan]Pending[/cyan]"
+        )
+        note_count = len(task.get("notes", []))
+        notes_text = f"[dim]{note_count} note{'s' if note_count != 1 else ''}[/dim]"
+        type_color = TASK_TYPE_COLORS[task["type"]]
+        tags_text = ", ".join(task.get("tags", [])) if task.get("tags") else "-"
+        table.add_row(
+            task["task_id"],
+            Text(task["type"], style=type_color),
+            Text(task["title"], style="bold"),
+            Text(task["priority"], style="yellow" if task["priority"] == "high" else "white"),
+            Text(due_date_str, style="red" if due_date_str.startswith("Overdue") else "white"),
+            total_time,
+            status,
+            notes_text,
+            tags_text,
+        )
+    console.print(table)
+
+
+@app.command()
+def version():
+    """
+    Show the version of the current CLI (dynamically retrieved from pyproject.toml).
+    """
+    import toml
+    from pathlib import Path
+    pyproject_path = Path(__file__).parent.parent / "pyproject.toml"
+    if not pyproject_path.exists():
+        console.print("[red]pyproject.toml not found![/red]")
+        return
+    try:
+        data = toml.load(pyproject_path)
+        version = (
+            data.get("project", {}).get("version") or
+            data.get("tool", {}).get("poetry", {}).get("version")
+        )
+        if version:
+            console.print(f"[bold green]Todo CLI version:[/bold green] {version}")
+        else:
+            console.print("[red]Version not found in pyproject.toml[/red]")
+    except Exception as e:
+        console.print(f"[red]Error reading pyproject.toml:[/red] {e}")
 
 
 @app.command()
@@ -1168,23 +1260,24 @@ def help(command: Optional[str] = typer.Argument(None, help="Command to get help
         ("init", "Initialize a new todo list with project details"),
         ("add", "Add a new task interactively"),
         ("list", "List all pending tasks with project information"),
-        ("show <tag>", "Show detailed information about a specific task"),
+        ("show <task_id>", "Show detailed information about a specific task"),
         ("status", "Show detailed project status and statistics"),
-        ("complete <tag>", "Mark a task as complete using its tag (e.g., PROJ-001)"),
-        (
-            "workon <tag>",
-            "Work on a specific task for a given duration (default: 25 minutes)",
-        ),
-        ("note add <tag>", "Add a new note to a task"),
-        ("note reset <tag>", "Reset (clear) all notes from a task"),
-        ("update type <tag>", "Update a task's type"),
-        ("update priority <tag>", "Update a task's priority"),
-        ("update due <tag>", "Update a task's due date"),
-        ("update title <tag>", "Update a task's title"),
-        ("update description <tag>", "Update a task's description"),
-        ("cancel <tag>", "Cancel a task by its tag (sets status to cancelled)"),
-        ("delete <tag>", "Delete a task by its tag (completely removes it from the list)"),
-        ("help [command]", "Show this help message or detailed help for a command"),
+        ("complete <task_id>", "Mark a task as complete using its task id (e.g., PROJ-001)"),
+        ("workon <task_id>", "Work on a specific task for a given duration (default: 25 minutes)"),
+        ("note add <task_id>", "Add a new note to a task"),
+        ("note reset <task_id>", "Reset (clear) all notes from a task"),
+        ("update type <task_id>", "Update a task's type"),
+        ("update priority <task_id>", "Update a task's priority"),
+        ("update due <task_id>", "Update a task's due date"),
+        ("update title <task_id>", "Update a task's title"),
+        ("update description <task_id>", "Update a task's description"),
+        ("cancel <task_id>", "Cancel a task by its task id (sets status to cancelled)"),
+        ("delete <task_id>", "Delete a task by its task id (completely removes it from the list)"),
+        ("tags", "List all unique tags across all tasks, along with the number of tasks for each tag"),
+        ("tag <tag>", "List all tasks associated with a given tag"),
+        ("version", "Show the version of the current CLI"),
+        ("search <query>", "Search tasks by title, description, or notes"),
+        ("board", "Launch a Dash web app with a Trello-like board showing all tasks grouped by status"),
     ]
 
     table = Table(show_header=False, box=None)
@@ -1198,6 +1291,20 @@ def help(command: Optional[str] = typer.Argument(None, help="Command to get help
     console.print(
         "\n[dim]For detailed help on any command, use: todo help <command>[/dim]"
     )
+
+
+@app.command()
+def board():
+    """
+    Launch a Dash web app with a Trello-like board showing all tasks grouped by status.
+    """
+    todos = load_todos()["tasks"]
+    launch_board(todos)
+
+
+# Create an update command group
+update_app = typer.Typer(help="Update task properties")
+app.add_typer(update_app, name="update")
 
 
 if __name__ == "__main__":

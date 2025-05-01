@@ -20,7 +20,7 @@ Efficient task management is essential for productivity in any project. This too
 - Task types (feature, bugfix, docs, test, refactor, chore) with color coding
 - Priority levels (high, medium, low) with color coding
 - Due dates with natural language support ("tomorrow", "next friday")
-- Task completion trackincg
+- Task completion tracking
 - Rich terminal output with detailed task information
 - Task notes with chronological history
 - Update task properties after creation
@@ -39,6 +39,28 @@ Efficient task management is essential for productivity in any project. This too
 - Due date statistics
 - Work session analytics
 - Time tracking summary
+
+### Visual Board (Trello-like)
+
+You can visualize your tasks in a Trello-like web board using Dash:
+
+```bash
+todo board
+```
+
+This command launches a local Dash web app (requires [Dash 3.x+](https://dash.plotly.com/) and [dash-bootstrap-components]) displaying your tasks as cards in columns by status (Pending, Completed, Cancelled). Each card shows:
+- Title (with status badge)
+- Task type and priority (color-coded badges)
+- Task ID
+- Due date
+- Tags (as badges)
+
+The board uses modern styling for easy scanning and prioritization. The app opens automatically in your browser at [http://127.0.0.1:8050/](http://127.0.0.1:8050/). The browser tab and header will display "Flowistic Task Board".
+
+> **Note:** If you haven't installed Dash, add it via your environment manager:
+> ```sh
+> uv pip install dash dash-bootstrap-components dash-mantine-components
+> ```
 
 ## Installation
 
@@ -76,7 +98,7 @@ You'll be prompted for:
 todo list
 ```
 Shows a table with:
-- Task tag (e.g., PROJ-001)
+- Task ID (e.g., PROJ-001)
 - Type (color-coded by category)
 - Title
 - Priority (color-coded)
@@ -90,7 +112,7 @@ Shows a table with:
 todo show PROJ-001
 ```
 Shows detailed information about a specific task:
-- Task title and tag
+- Task title and task ID
 - Task type
 - Status and priority
 - Description
@@ -132,9 +154,9 @@ todo update description PROJ-001                   # Interactive prompt
 
 ### Task Cancellation & Deletion
 
-- `todo cancel <tag>`: Mark a task as cancelled. The task remains in your list but its status is shown as cancelled in both `list` and `show` commands.
+- `todo cancel <task_id>`: Mark a task as cancelled. The task remains in your list but its status is shown as cancelled in both `list` and `show` commands.
     - Example: `todo cancel PROJ-001`
-- `todo delete <tag>`: Permanently remove a task from your todo list. This action cannot be undone.
+- `todo delete <task_id>`: Permanently remove a task from your todo list. This action cannot be undone.
     - Example: `todo delete PROJ-002`
 
 Cancelled tasks are excluded from project completion statistics and are clearly indicated in task listings.
@@ -188,7 +210,7 @@ project:
   prefix: "PROJ"
   next_task_number: 1
 tasks:
-  - tag: "PROJ-001"
+  - task_id: "PROJ-001"
     title: "Example Task"
     description: "Task description"
     type: "feature"
