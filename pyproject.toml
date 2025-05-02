@@ -34,6 +34,8 @@ dependencies = [
     "dash-bootstrap-components>=2.0.2",
     "dash-mantine-components>=1.2.0",
     "pkginfo>=1.12.1.2",
+    "numpy>=2.0.2",
+    "pandas>=2.2.3",
 ]
 
 [project.urls]
