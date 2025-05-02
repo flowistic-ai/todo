@@ -69,6 +69,12 @@ def launch_board(tasks: List[Dict]):
         # Tags as badges
         tags = task.get("tags", [])
         tag_badges = [dbc.Badge(tag, color="secondary", className="me-1", pill=True, style={"fontSize": "0.85rem", "background": "#e3e8f0", "color": "#4a5568"}) for tag in tags]
+        # --- View Details Link ---
+        details_link = dcc.Link(
+            'View Details', 
+            href=f"/task/{task['task_id']}", 
+            style={"fontSize": "0.92rem", "fontWeight": 500, "color": "#3182ce", "textDecoration": "underline", "marginTop": "0.5rem", "display": "inline-block"}
+        )
         return dbc.Card([
             dbc.CardHeader([
                 html.Span(task["title"], style={"fontWeight": "bold", "fontSize": "1.15rem", "fontFamily": "'Montserrat', 'Segoe UI', Arial, sans-serif", "color": "#2d3748"}),
@@ -87,6 +93,7 @@ def launch_board(tasks: List[Dict]):
                     task["due_date"] if task.get("due_date") else "-"
                 ], className="mb-2", style={"fontSize": "0.95rem"}),
                 html.Div(tag_badges, className="mb-1"),
+                details_link
             ], style={"fontFamily": "'Segoe UI', Arial, sans-serif"})
         ], style={
             "marginBottom": "1.2rem",
@@ -226,6 +233,111 @@ def launch_board(tasks: List[Dict]):
             ], className="gy-4"),
         ], fluid=True)
 
+    def layout_task_details(task_id):
+        # Find the task by id
+        task = next((t for t in tasks if str(t['task_id']) == str(task_id)), None)
+        if not task:
+            return dbc.Container([
+                html.Div([
+                    html.H3("Task not found", style={"color": "#e53e3e", "fontWeight": 700, "marginBottom": "1.5rem"}),
+                    dcc.Link("← Back to Board", href="/", style={"color": "#3182ce", "fontWeight": 500, "marginTop": "1.5rem", "display": "inline-block"})
+                ], style={"textAlign": "center", "padding": "3rem 0"})
+            ], style={"maxWidth": "600px", "margin": "0 auto"})
+
+        from datetime import datetime
+        import dateutil.parser
+        def format_duration(minutes):
+            if not minutes:
+                return "0m"
+            hours, mins = divmod(minutes, 60)
+            return f"{hours}h {mins}m" if hours else f"{mins}m"
+        sessions = task.get('work_sessions', [])
+        total_time = sum(s.get('duration', 0) for s in sessions)
+        completed_sessions = sum(1 for s in sessions if not s.get('interrupted'))
+        interrupted_sessions = sum(1 for s in sessions if s.get('interrupted'))
+        created_at = task.get('created_at')
+        if created_at:
+            created_at = dateutil.parser.parse(created_at)
+            created_str = created_at.strftime('%Y-%m-%d %H:%M')
+        else:
+            created_str = "-"
+        notes = task.get('notes', [])
+        # Badge styles
+        type_colors = {
+            "task": "primary",
+            "bug": "danger",
+            "feature": "success",
+            "chore": "secondary",
+        }
+        type_color = type_colors.get(task.get("type", "task"), "primary")
+        priority_color = {
+            "high": "danger",
+            "medium": "warning",
+            "low": "success",
+        }.get(task.get("priority", "medium"), "secondary")
+        if task.get("completed"):
+            status_label = "Completed"
+            status_color = "success"
+        elif task.get("status") == "cancelled":
+            status_label = "Cancelled"
+            status_color = "warning"
+        elif task.get("status") == "doing":
+            status_label = "Doing"
+            status_color = "info"
+        else:
+            status_label = "Pending"
+            status_color = "info"
+        tag_badges = [dbc.Badge(tag, color="secondary", className="me-1", pill=True, style={"fontSize": "0.85rem", "background": "#e3e8f0", "color": "#4a5568"}) for tag in task.get('tags', [])]
+        # Main Card
+        return dbc.Container([
+            dcc.Link("← Back to Board", href="/", style={"color": "#3182ce", "fontWeight": 500, "marginBottom": "1.5rem", "display": "inline-block"}),
+            dbc.Card([
+                dbc.CardHeader([
+                    html.Div([
+                        html.Span(f"Task {task['task_id']}: ", style={"fontWeight": 700, "fontSize": "1.2rem", "color": "#2d3748"}),
+                        html.Span(task['title'], style={"fontWeight": 600, "fontSize": "1.1rem", "color": "#2d3748"}),
+                        dbc.Badge(status_label, color=status_color, className="ms-2", pill=True, style={"fontSize": "0.9rem"})
+                    ], className="d-flex align-items-center justify-content-between"),
+                ], style={"background": "#f7fafc", "borderBottom": "1px solid #e2e8f0", "padding": "1rem 1.5rem"}),
+                dbc.CardBody([
+                    dbc.Row([
+                        dbc.Col([
+                            html.H5("Details", style={"fontWeight": 600, "marginBottom": "1rem", "color": "#2b6cb0"}),
+                            html.Ul([
+                                html.Li([html.Span("Type: ", style={"fontWeight": 500}), dbc.Badge(task['type'], color=type_color, className="ms-2", pill=True, style={"fontSize": "0.85rem"})]),
+                                html.Li([html.Span("Priority: ", style={"fontWeight": 500}), dbc.Badge(task['priority'].capitalize(), color=priority_color, pill=True, style={"fontSize": "0.85rem"})]),
+                                html.Li([html.Span("Status: ", style={"fontWeight": 500}), dbc.Badge(status_label, color=status_color, pill=True, style={"fontSize": "0.85rem"})]),
+                                html.Li([html.Span("Due: ", style={"fontWeight": 500}), html.Span(task.get('due_date') or '-', style={"color": "#555"})]),
+                                html.Li([html.Span("Created: ", style={"fontWeight": 500}), html.Span(created_str, style={"color": "#555"})]),
+                                html.Li([html.Span("Tags: ", style={"fontWeight": 500}), tag_badges if tag_badges else html.Span("-", style={"color": "#555"})]),
+                            ], style={"fontSize": "1rem", "listStyle": "none", "paddingLeft": 0}),
+                        ], width=6),
+                        dbc.Col([
+                            html.H5("Work Sessions", style={"fontWeight": 600, "marginBottom": "1rem", "color": "#38a169"}),
+                            html.Ul([
+                                html.Li([html.Span("Total Time Worked: ", style={"fontWeight": 500}), html.Span(format_duration(total_time), style={"color": "#555"})]),
+                                html.Li([html.Span("Completed Sessions: ", style={"fontWeight": 500}), html.Span(str(completed_sessions), style={"color": "#555"})]),
+                                html.Li([html.Span("Interrupted Sessions: ", style={"fontWeight": 500}), html.Span(str(interrupted_sessions), style={"color": "#555"})]),
+                            ], style={"fontSize": "1rem", "listStyle": "none", "paddingLeft": 0}),
+                        ], width=6)
+                    ], className="mb-4"),
+                    html.Hr(),
+                    html.H5("Notes", style={"fontWeight": 600, "color": "#805ad5", "marginBottom": "1rem"}),
+                    dbc.Alert("No notes yet.", color="secondary", className="mb-3", style={"fontSize": "1rem", "background": "#f7fafc", "color": "#555"}) if not notes else html.Ul([
+                        html.Li(note, style={"fontSize": "1rem", "marginBottom": "0.7rem", "color": "#333"}) for note in notes
+                    ], style={"paddingLeft": "1.2rem"}),
+                ], style={"padding": "2rem 2rem 1.5rem 2rem"})
+            ], style={
+                "maxWidth": "700px",
+                "margin": "0 auto 2.5rem auto",
+                "boxShadow": "0 6px 24px rgba(44,62,80,0.13)",
+                "borderRadius": "1.1rem",
+                "border": "1px solid #e2e8f0",
+                "background": "#fff"
+            }),
+            dcc.Link("← Back to Board", href="/", style={"color": "#3182ce", "fontWeight": 500, "marginTop": "1.5rem", "display": "inline-block"})
+        ], style={"padding": "2.5rem 0"})
+
     def layout_statistics():
         # Compute statistics
         total_tasks = len(tasks)
@@ -347,6 +459,12 @@ def launch_board(tasks: List[Dict]):
 
     @app.callback(Output("page-content", "children"), [Input("url", "pathname")])
     def display_page(pathname):
+        # Match /task/<task_id>
+        import re
+        match = re.match(r"/task/(.+)", pathname or "")
+        if match:
+            task_id = match.group(1)
+            return layout_task_details(task_id)
         if pathname == "/statistics":
             return layout_statistics()
         return layout_board()
