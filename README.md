@@ -55,6 +55,9 @@ This command launches a local Dash web app (requires [Dash 3.x+](https://dash.pl
 - Due date
 - Tags (as badges)
 
+**New:**
+- The board now features interactive filter controls at the top for **Status**, **Type**, and **Due Date**. You can select multiple options in each filter to dynamically filter the displayed tasks. The filters are styled for clarity and compactness, making it easy to focus on specific subsets of your tasks.
+
 The board uses modern styling for easy scanning and prioritization. The app opens automatically in your browser at [http://127.0.0.1:8050/](http://127.0.0.1:8050/). The browser tab and header will display "Flowistic Task Board".
 
 > **Note:** If you haven't installed Dash, add it via your environment manager:
@@ -198,8 +201,9 @@ todo help <command>      # Show detailed help for a specific command
 ## Configuration
 
 The app stores tasks in YAML format:
-- `todo.yaml` in the directory where the `todo init` command is run
-- If in a git repository, `todo.yaml` is automatically added to `.gitignore`
+- `todo.yaml` is **always** created in the directory where the `todo init` command is run.
+- There is **no fallback** to a user-level `.todo.yaml` in the home directory; all data is project-local.
+- If in a git repository, `todo.yaml` is automatically added to `.gitignore` (the file is created if it doesn't exist).
 
 ## Task Storage Format
 
