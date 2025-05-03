@@ -8,8 +8,16 @@
 set shell := ["bash", "-cu"]
 
 bump-version version:
-    sed -i '' "s/^version = \".*\"/version = \"{{version}}\"/" pyproject.toml
-    echo "Version set to {{version}} in pyproject.toml"
+    if [ -z "{{version}}" ] || [ "{{version}}" = "_" ]; then \
+      current_version=$(grep '^version = "' pyproject.toml | sed 's/version = \"\(.*\)\"/\1/'); \
+      IFS='.' read -r major minor patch <<< "$$current_version"; \
+      patch=$$(($$patch + 1)); \
+      new_version="$$major.$$minor.$$patch"; \
+    else \
+      new_version="{{version}}"; \
+    fi; \
+    sed -i '' "s/^version = \".*\"/version = \"$$new_version\"/" pyproject.toml; \
+    echo "Version set to $$new_version in pyproject.toml"
 
 build:
     rm -rf dist/
