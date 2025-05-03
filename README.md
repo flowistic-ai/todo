@@ -24,6 +24,8 @@ Efficient task management is essential for productivity in any project. This too
 - Rich terminal output with detailed task information
 - Task notes with chronological history
 - Update task properties after creation
+- Set and track the status of tasks with full history.
+- Update status via CLI (`todo update status <task_id> <status>`).
 
 ### Time Tracking
 - Built-in Pomodoro-style timer (default: 25 minutes)
@@ -153,6 +155,10 @@ todo update title PROJ-001             # Interactive prompt
 # Update description
 todo update description PROJ-001 "New description" # Set description directly
 todo update description PROJ-001                   # Interactive prompt
+
+# Update status
+todo update status PROJ-001 pending    # Set status directly
+todo update status PROJ-001            # Interactive prompt
 ```
 
 ### Task Cancellation & Deletion
@@ -197,6 +203,13 @@ todo complete PROJ-001
 todo help                # Show all commands
 todo help <command>      # Show detailed help for a specific command
 ```
+
+## Changelog
+
+### v0.2.0 (2025-05-03)
+- Feature: You can now set the status of a task (pending, doing, completed, cancelled).
+- All status changes are tracked in a per-task history (visible with `todo show <task_id>`).
+- New command: `todo update status <task_id> <status>` to change and track status.
 
 ## Configuration
 

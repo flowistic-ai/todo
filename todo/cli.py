@@ -248,6 +248,10 @@ def add():
         "work_sessions": [],
         "notes": [notes] if notes else [],
         "tags": tags,
+        "status": "pending",
+        "status_history": [
+            {"status": "pending", "timestamp": datetime.now().isoformat()}
+        ],
     }
 
     todos["tasks"].append(task)
@@ -398,7 +402,7 @@ def show(task_id: str = typer.Argument(..., help="The task id (e.g., PROJ-001)")
 
     # Create a panel to display task information
     console.print(
-        f"\n[bold blue]{task['task_id']}[/bold blue]: [bold]{task['title']}[/bold]"
+        f"\n[bold]Working on:[/bold] {task['title']} ({task['task_id']})"
     )
 
     # Type and Priority
@@ -463,6 +467,13 @@ def show(task_id: str = typer.Argument(..., help="The task id (e.g., PROJ-001)")
         console.print(
             f"\nTotal time worked: [bold]{format_duration(total_time)}[/bold]"
         )
+
+    # Status History
+    if task.get("status_history"):
+        console.print("\n[bold]Status History:[/bold]")
+        for entry in task["status_history"]:
+            ts = parser.parse(entry["timestamp"]).strftime('%Y-%m-%d %H:%M')
+            console.print(f"- {entry['status']} at [dim]{ts}[/dim]")
 
     # Created Date
     created_at = parser.parse(task["created_at"])
@@ -1137,6 +1148,54 @@ def update_description(
     console.print(f"[green]✓[/green] Updated task description")
 
 
+@update_app.command("status")
+def update_status(
+    task_id: str = typer.Argument(..., help="The task id (e.g., PROJ-001)"),
+    new_status: Optional[str] = typer.Argument(
+        None, help="New status. If not provided, will prompt for input."
+    ),
+):
+    """
+    Update a task's status and track status changes.
+
+    Arguments:
+        task_id: The task id (e.g., PROJ-001, case-insensitive)
+        new_status: New status. If not provided, will prompt for input.
+
+    Example:
+        todo update status PROJ-001 doing
+        todo update status PROJ-001  # Will prompt for status
+    """
+    todos = load_todos()
+    task = next((t for t in todos["tasks"] if t["task_id"].lower() == task_id.lower()), None)
+    if not task:
+        console.print(f"[red]Error:[/red] Task '{task_id}' not found!")
+        return
+    valid_statuses = ["pending", "doing", "completed", "cancelled"]
+    current_status = task.get("status", "pending")
+    console.print(f"\nCurrent status: {current_status}")
+    if new_status is None:
+        new_status = Prompt.ask("New status", choices=valid_statuses, default=current_status)
+    elif new_status not in valid_statuses:
+        console.print(f"[red]Error:[/red] Invalid status. Must be one of: {', '.join(valid_statuses)}")
+        return
+    if new_status == current_status:
+        console.print(f"[yellow]No change: Status is already '{current_status}'.[/yellow]")
+        return
+    # Update the status
+    task["status"] = new_status
+    if "status_history" not in task:
+        task["status_history"] = []
+    task["status_history"].append({"status": new_status, "timestamp": datetime.now().isoformat()})
+    # Optionally sync completed/cancelled fields
+    if new_status == "completed":
+        task["completed"] = True
+    elif new_status == "cancelled":
+        task["completed"] = False
+    save_todos(todos)
+    console.print(f"[green]✓[/green] Updated task status to: {new_status}")
+
+
 @app.command()
 def search(query: str = typer.Argument(..., help="Search query (matches title, description, or notes)")):
     """
@@ -1271,6 +1330,7 @@ def help(command: Optional[str] = typer.Argument(None, help="Command to get help
         ("update due <task_id>", "Update a task's due date"),
         ("update title <task_id>", "Update a task's title"),
         ("update description <task_id>", "Update a task's description"),
+        ("update status <task_id>", "Update a task's status"),
         ("cancel <task_id>", "Cancel a task by its task id (sets status to cancelled)"),
         ("delete <task_id>", "Delete a task by its task id (completely removes it from the list)"),
         ("tags", "List all unique tags across all tasks, along with the number of tasks for each tag"),
