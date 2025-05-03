@@ -211,6 +211,7 @@ def add():
     - Due date (optional, supports natural language)
     - Initial note (optional)
     - Tags (comma-separated, optional)
+    - Repeat (optional, natural language)
 
     The task will be automatically assigned a task id using the project prefix.
     Example: For project prefix 'PROJ', first task will be 'PROJ-001'
@@ -232,6 +233,7 @@ def add():
     notes = Prompt.ask("Initial note (optional)", default="")
     tags_str = Prompt.ask("Tags (comma-separated, optional)", default="")
     tags = [tag.strip() for tag in tags_str.split(",") if tag.strip()] if tags_str else []
+    repeat = Prompt.ask("Repeat (e.g., every day, every week, leave blank for none)", default=None)
 
     task_id = f"{todos['project']['prefix']}-{todos['project']['next_task_number']:03d}"
     todos["project"]["next_task_number"] += 1
@@ -252,6 +254,7 @@ def add():
         "status_history": [
             {"status": "pending", "timestamp": datetime.now().isoformat()}
         ],
+        "repeat": repeat if repeat else None,
     }
 
     todos["tasks"].append(task)
@@ -445,6 +448,11 @@ def show(task_id: str = typer.Argument(..., help="The task id (e.g., PROJ-001)")
         console.print(
             f"\n[bold]Due Date:[/bold] [{due_style}]{due_date_str}[/{due_style}]"
         )
+
+    # Repeat
+    repeat = task.get("repeat")
+    if repeat:
+        console.print(f"\n[cyan]Repeat:[/cyan] {repeat}")
 
     # Work Sessions
     if task.get("work_sessions"):
@@ -1190,10 +1198,46 @@ def update_status(
     # Optionally sync completed/cancelled fields
     if new_status == "completed":
         task["completed"] = True
+        # Auto-reschedule if repeatable
+        repeat_rule = task.get("repeat")
+        if repeat_rule:
+            # Parse the repeat rule as a time delta
+            last_due = parser.parse(task["due_date"]) if task.get("due_date") else datetime.now()
+            next_due = dateparser.parse(repeat_rule, settings={"RELATIVE_BASE": last_due})
+            if next_due:
+                task["due_date"] = next_due.isoformat()
+                task["completed"] = False
+                task["status"] = "pending"
+                task["status_history"].append({"status": "pending", "timestamp": datetime.now().isoformat(), "auto_repeat": True})
+                console.print(f"[cyan]Task is repeatable. Next due date set to {next_due.strftime('%Y-%m-%d')}.[/cyan]")
+            else:
+                console.print("[yellow]Warning: Could not parse repeat rule for next due date. Please check the repeat value.[/yellow]")
     elif new_status == "cancelled":
         task["completed"] = False
     save_todos(todos)
     console.print(f"[green]✓[/green] Updated task status to: {new_status}")
+
+
+@update_app.command("repeat")
+def update_repeat(
+    task_id: str = typer.Argument(..., help="The task id (e.g., PROJ-001)"),
+    repeat: Optional[str] = typer.Argument(None, help="Repeat rule in natural language (e.g., every week)"),
+):
+    """
+    Update a task's repeatability (e.g., every day, every week).
+    """
+    todos = load_todos()
+    task = next((t for t in todos["tasks"] if t["task_id"].lower() == task_id.lower()), None)
+    if not task:
+        console.print(f"[red]Error:[/red] Task '{task_id}' not found!")
+        return
+    current_repeat = task.get("repeat", None)
+    console.print(f"\nCurrent repeat: {current_repeat if current_repeat else '[none]'}")
+    if repeat is None:
+        repeat = Prompt.ask("New repeat rule (e.g., every week, leave blank for none)", default=current_repeat or "")
+    task["repeat"] = repeat if repeat else None
+    save_todos(todos)
+    console.print(f"[green]✓[/green] Updated repeat rule to: {repeat if repeat else '[none]'}")
 
 
 @app.command()
@@ -1331,6 +1375,7 @@ def help(command: Optional[str] = typer.Argument(None, help="Command to get help
         ("update title <task_id>", "Update a task's title"),
         ("update description <task_id>", "Update a task's description"),
         ("update status <task_id>", "Update a task's status"),
+        ("update repeat <task_id>", "Update a task's repeatability"),
         ("cancel <task_id>", "Cancel a task by its task id (sets status to cancelled)"),
         ("delete <task_id>", "Delete a task by its task id (completely removes it from the list)"),
         ("tags", "List all unique tags across all tasks, along with the number of tasks for each tag"),
@@ -1338,6 +1383,7 @@ def help(command: Optional[str] = typer.Argument(None, help="Command to get help
         ("version", "Show the version of the current CLI"),
         ("search <query>", "Search tasks by title, description, or notes"),
         ("board", "Launch a Dash web app with a Trello-like board showing all tasks grouped by status"),
+        ("evolve <task_id>", "Move a task to the next workflow status"),
     ]
 
     table = Table(show_header=False, box=None)
@@ -1362,9 +1408,100 @@ def board():
     launch_board(todos)
 
 
+@app.command()
+def evolve(task_id: str = typer.Argument(..., help="The task id (e.g., PROJ-001)")):
+    """
+    Move a task to the next workflow status.
+
+    Workflow order: pending -> doing -> completed -> cancelled
+    If already at the last status, stays there.
+
+    Example:
+        todo evolve PROJ-001
+    """
+    todos = load_todos()
+    workflow = ["pending", "doing", "completed", "cancelled"]
+    # Find the task
+    task = next((t for t in todos["tasks"] if t["task_id"].lower() == task_id.lower()), None)
+    if not task:
+        console.print(f"[red]Error:[/red] Task '{task_id}' not found!")
+        return
+    current_status = task.get("status", "pending")
+    try:
+        idx = workflow.index(current_status)
+        if idx < len(workflow) - 1:
+            new_status = workflow[idx+1]
+            task["status"] = new_status
+            if new_status == "completed":
+                task["completed"] = True
+            elif new_status == "pending":
+                task["completed"] = False
+            if "status_history" not in task:
+                task["status_history"] = []
+            task["status_history"].append({"status": new_status, "timestamp": datetime.now().isoformat()})
+            save_todos(todos)
+            console.print(f"[green]✓[/green] Task [bold]{task_id}[/bold] moved to status: [cyan]{new_status}[/cyan]")
+        else:
+            console.print(f"[yellow]Task [bold]{task_id}[/bold] is already at the last status: [cyan]{current_status}[/cyan]")
+    except ValueError:
+        console.print(f"[red]Error:[/red] Unknown status '{current_status}' for task '{task_id}'.")
+
+
 # Create an update command group
 update_app = typer.Typer(help="Update task properties")
 app.add_typer(update_app, name="update")
+
+
+@app.command()
+def add_tag(
+    task_id: str = typer.Argument(..., help="The task id (e.g., PROJ-001)"),
+    tag: str = typer.Argument(..., help="Tag to add")
+):
+    """
+    Add a tag to a task.
+
+    Example:
+        todo add-tag PROJ-001 urgent
+    """
+    todos = load_todos()
+    task = next((t for t in todos["tasks"] if t["task_id"].lower() == task_id.lower()), None)
+    if not task:
+        console.print(f"[red]Error:[/red] Task '{task_id}' not found!")
+        return
+    tags = set(task.get("tags", []))
+    if tag in tags:
+        console.print(f"[yellow]Task already has tag '{tag}'.[/yellow]")
+        return
+    tags.add(tag)
+    task["tags"] = list(tags)
+    save_todos(todos)
+    console.print(f"[green]✓[/green] Tag '[bold]{tag}[/bold]' added to task [bold]{task_id}[/bold].")
+
+
+@app.command()
+def remove_tag(
+    task_id: str = typer.Argument(..., help="The task id (e.g., PROJ-001)"),
+    tag: str = typer.Argument(..., help="Tag to remove")
+):
+    """
+    Remove a tag from a task.
+
+    Example:
+        todo remove-tag PROJ-001 urgent
+    """
+    todos = load_todos()
+    task = next((t for t in todos["tasks"] if t["task_id"].lower() == task_id.lower()), None)
+    if not task:
+        console.print(f"[red]Error:[/red] Task '{task_id}' not found!")
+        return
+    tags = set(task.get("tags", []))
+    if tag not in tags:
+        console.print(f"[yellow]Task does not have tag '{tag}'.[/yellow]")
+        return
+    tags.remove(tag)
+    task["tags"] = list(tags)
+    save_todos(todos)
+    console.print(f"[green]✓[/green] Tag '[bold]{tag}[/bold]' removed from task [bold]{task_id}[/bold].")
 
 
 if __name__ == "__main__":

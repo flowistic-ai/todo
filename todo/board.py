@@ -2,19 +2,19 @@ from typing import List, Dict
 import webbrowser
 from threading import Timer
 import dash
-from dash import html, dcc, Input, Output
+from dash import html, dcc, Input, Output, State
 import dash_bootstrap_components as dbc
 import plotly.express as px
 import pandas as pd
+from datetime import datetime
 
 def launch_board(tasks: List[Dict]):
     """
     Launch a Dash web app with a Trello-like board showing all tasks grouped by status.
     """
     try:
-        import dash
-        from dash import html
-        import dash_bootstrap_components as dbc
+        # Only catch ImportError for CLI fallback, not for main board rendering
+        pass
     except ImportError:
         print("[red]Dash is not installed. Please run 'uv pip install dash dash-bootstrap-components'.[/red]")
         return
@@ -34,10 +34,6 @@ def launch_board(tasks: List[Dict]):
             return "Doing"
         else:
             return "Pending"
-    columns = {s: [] for s, _ in status_columns}
-    for task in tasks:
-        columns[get_status(task)].append(task)
-
     def make_card(task):
         # Color for type
         type_colors = {
@@ -66,6 +62,22 @@ def launch_board(tasks: List[Dict]):
         else:
             status_label = "Pending"
             status_color = "info"
+        # Repeat info
+        repeat = task.get("repeat")
+        repeat_badge = None
+        if repeat:
+            repeat_badge = dbc.Badge(f"Repeats: {repeat}", color="info", pill=True, style={"fontSize": "0.85rem", "marginLeft": "0.5rem", "background": "#e6fffa", "color": "#234e52", "border": "1px solid #38b2ac"})
+        # Next scheduled date (for repeatable tasks)
+        next_due = None
+        if repeat and task.get("due_date"):
+            next_due = task["due_date"]
+        # Repeat info row
+        repeat_info_row = None
+        if repeat:
+            repeat_info_row = html.Div([
+                html.Span("Next: ", style={"fontWeight": "bold", "color": "#319795"}),
+                html.Span(next_due, style={"color": "#234e52", "fontWeight": 500})
+            ], className="mb-1", style={"fontSize": "0.92rem"})
         # Tags as badges
         tags = task.get("tags", [])
         tag_badges = [dbc.Badge(tag, color="secondary", className="me-1", pill=True, style={"fontSize": "0.85rem", "background": "#e3e8f0", "color": "#4a5568"}) for tag in tags]
@@ -78,7 +90,8 @@ def launch_board(tasks: List[Dict]):
         return dbc.Card([
             dbc.CardHeader([
                 html.Span(task["title"], style={"fontWeight": "bold", "fontSize": "1.15rem", "fontFamily": "'Montserrat', 'Segoe UI', Arial, sans-serif", "color": "#2d3748"}),
-                dbc.Badge(status_label, color=status_color, className="ms-2", pill=True, style={"fontSize": "0.9rem"})
+                dbc.Badge(status_label, color=status_color, className="ms-2", pill=True, style={"fontSize": "0.9rem"}),
+                repeat_badge if repeat_badge else None
             ], className="d-flex justify-content-between align-items-center", style={"background": "#f1f5f9", "borderBottom": "1px solid #e2e8f0"}),
             dbc.CardBody([
                 html.Div([
@@ -92,6 +105,7 @@ def launch_board(tasks: List[Dict]):
                     html.Span("Due: ", style={"fontWeight": "bold", "color": "#3182ce"}),
                     task["due_date"] if task.get("due_date") else "-"
                 ], className="mb-2", style={"fontSize": "0.95rem"}),
+                repeat_info_row if repeat_info_row else None,
                 html.Div(tag_badges, className="mb-1"),
                 details_link
             ], style={"fontFamily": "'Segoe UI', Arial, sans-serif"})
@@ -126,111 +140,45 @@ def launch_board(tasks: List[Dict]):
     ], style=SIDEBAR_STYLE)
 
     # --- Main Content Layouts ---
-    def layout_board():
-        header_styles = {
-            "Pending": {
-                "background": "linear-gradient(90deg, #6dd5ed 0%, #2193b0 100%)",
-                "color": "#fff",
-                "fontFamily": "'Montserrat', 'Segoe UI', Arial, sans-serif",
-                "fontWeight": 800,
-                "fontSize": "1.35rem",
-                "letterSpacing": "0.04em",
-                "borderRadius": "0.7rem 0.7rem 0 0",
-                "boxShadow": "0 2px 12px rgba(33,147,176,0.07)",
-                "padding": "0.85rem 0.5rem",
-                "textAlign": "center",
-                "marginBottom": "1.2rem",
-                "textShadow": "0 1px 4px rgba(33,147,176,0.10)"
-            },
-            "Doing": {
-                "background": "linear-gradient(90deg, #ffb347 0%, #ffcc33 100%)",
-                "color": "#fff",
-                "fontFamily": "'Montserrat', 'Segoe UI', Arial, sans-serif",
-                "fontWeight": 800,
-                "fontSize": "1.35rem",
-                "letterSpacing": "0.04em",
-                "borderRadius": "0.7rem 0.7rem 0 0",
-                "boxShadow": "0 2px 12px rgba(255,204,51,0.07)",
-                "padding": "0.85rem 0.5rem",
-                "textAlign": "center",
-                "marginBottom": "1.2rem",
-                "textShadow": "0 1px 4px rgba(255,204,51,0.10)"
-            },
-            "Completed": {
-                "background": "linear-gradient(90deg, #43e97b 0%, #38f9d7 100%)",
-                "color": "#fff",
-                "fontFamily": "'Montserrat', 'Segoe UI', Arial, sans-serif",
-                "fontWeight": 800,
-                "fontSize": "1.35rem",
-                "letterSpacing": "0.04em",
-                "borderRadius": "0.7rem 0.7rem 0 0",
-                "boxShadow": "0 2px 12px rgba(56,249,215,0.07)",
-                "padding": "0.85rem 0.5rem",
-                "textAlign": "center",
-                "marginBottom": "1.2rem",
-                "textShadow": "0 1px 4px rgba(56,249,215,0.10)"
-            },
-            "Cancelled": {
-                "background": "linear-gradient(90deg, #f7971e 0%, #ffd200 100%)",
-                "color": "#fff",
-                "fontFamily": "'Montserrat', 'Segoe UI', Arial, sans-serif",
-                "fontWeight": 800,
-                "fontSize": "1.35rem",
-                "letterSpacing": "0.04em",
-                "borderRadius": "0.7rem 0.7rem 0 0",
-                "boxShadow": "0 2px 12px rgba(255,210,0,0.07)",
-                "padding": "0.85rem 0.5rem",
-                "textAlign": "center",
-                "marginBottom": "1.2rem",
-                "textShadow": "0 1px 4px rgba(255,210,0,0.10)"
-            },
-        }
-        columns = {
-            "Pending": [],
-            "Doing": [],
-            "Completed": [],
-            "Cancelled": []
-        }
-        for task in tasks:
-            status = task.get("status", "Pending").capitalize()
-            if status not in columns:
-                status = "Pending"
-            columns[status].append(task)
-        status_columns = [
-            ("Pending", "#2193b0"),
-            ("Doing", "#ffb347"),
-            ("Completed", "#38f9d7"),
-            ("Cancelled", "#ffd200")
-        ]
-        # Always show all four columns in one row, each with equal width
-        return dbc.Container([
-            html.H2("Flowistic Task Board", className="my-4 text-center", style={
-                "fontFamily": "'Montserrat', 'Segoe UI', Arial, sans-serif",
-                "fontWeight": 700,
-                "color": "#2b6cb0",
-                "letterSpacing": "0.05em"
-            }),
-            dbc.Row([
+    def layout_board(filtered_tasks=None):
+        # Use filtered_tasks if provided, else use all tasks
+        current_tasks = filtered_tasks if filtered_tasks is not None else tasks
+        columns = {s: [] for s, _ in status_columns}
+        for task in current_tasks:
+            columns[get_status(task)].append(task)
+        # Filter toggle for repeatable tasks
+        filter_repeat = dcc.Checklist(
+            options=[{"label": "Show only repeatable tasks", "value": "repeatable"}],
+            value=[],
+            id="repeat-filter",
+            style={"marginBottom": "1.2rem", "fontWeight": 500, "fontSize": "1.05rem"}
+        )
+        # Board columns
+        board_columns = []
+        for status, color in status_columns:
+            filtered = columns[status]
+            board_columns.append(
                 dbc.Col([
-                    html.Div([
-                        html.Div(status, style=header_styles[status]),
-                        html.Div([
-                            make_card(task) for task in columns[status]
-                        ], style={
-                            "maxHeight": "70vh",
-                            "overflowY": "auto",
-                            "padding": "0 0.5rem"
-                        })
-                    ], style={
-                        "background": "linear-gradient(135deg, #f8fafc 60%, #e3e8f0 100%)",
-                        "borderRadius": "0.85rem",
-                        "padding": "1.2rem 0.7rem",
-                        "boxShadow": "0 4px 20px rgba(44, 62, 80, 0.07)",
-                        "minHeight": "82vh",
-                        "border": "1px solid #e2e8f0"
-                    })
-                ], width=3, style={"padding": "1rem"}) for status, color in status_columns
-            ], className="gy-4"),
+                    html.H4(status, style={"color": color, "fontWeight": 700, "marginBottom": "1rem"}),
+                    *[make_card(task) for task in filtered]
+                ], width=3, style={"minWidth": "320px"})
+            )
+        # Dashboard summary for repeatable tasks
+        repeatable_count = sum(1 for t in current_tasks if t.get("repeat"))
+        overdue_repeat_count = sum(1 for t in current_tasks if t.get("repeat") and t.get("due_date") and t["due_date"] < datetime.now().isoformat())
+        dashboard = dbc.Card([
+            dbc.CardBody([
+                html.H5("Repeatable Tasks", className="card-title mb-1", style={"fontWeight": 700}),
+                html.Div([
+                    dbc.Badge(f"Total: {repeatable_count}", color="info", className="me-2", style={"fontSize": "1rem", "padding": "0.7em 1.2em"}),
+                    dbc.Badge(f"Overdue: {overdue_repeat_count}", color="danger" if overdue_repeat_count else "secondary", className="me-2", style={"fontSize": "1rem", "padding": "0.7em 1.2em"})
+                ])
+            ])
+        ], style={"boxShadow": "0 2px 8px rgba(44,62,80,0.08)", "borderRadius": "0.7rem", "marginBottom": "1.2rem"})
+        return dbc.Container([
+            dashboard,
+            filter_repeat,
+            dbc.Row(board_columns, className="g-4 flex-nowrap", style={"overflowX": "auto"})
         ], fluid=True)
 
     def layout_task_details(task_id):
@@ -289,6 +237,20 @@ def launch_board(tasks: List[Dict]):
             status_color = "info"
         tag_badges = [dbc.Badge(tag, color="secondary", className="me-1", pill=True, style={"fontSize": "0.85rem", "background": "#e3e8f0", "color": "#4a5568"}) for tag in task.get('tags', [])]
         # Main Card
+        rows = [
+            html.Tr([html.Th("Task ID"), html.Td(task["task_id"])]),
+            html.Tr([html.Th("Title"), html.Td(task["title"])]),
+            html.Tr([html.Th("Type"), html.Td(task["type"])]),
+            html.Tr([html.Th("Priority"), html.Td(task["priority"])]),
+            html.Tr([html.Th("Status"), html.Td(task["status"])]),
+            html.Tr([html.Th("Due Date"), html.Td(task["due_date"] if task.get("due_date") else "-")]),
+        ]
+        # Add repeat row if present
+        if task.get("repeat"):
+            rows.append(html.Tr([html.Th("Repeat"), html.Td(task["repeat"])]))
+            # Show next scheduled date
+            if task.get("due_date"):
+                rows.append(html.Tr([html.Th("Next Due"), html.Td(task["due_date"])]))
         return dbc.Container([
             dcc.Link("← Back to Board", href="/", style={"color": "#3182ce", "fontWeight": 500, "marginBottom": "1.5rem", "display": "inline-block"}),
             dbc.Card([
@@ -303,14 +265,10 @@ def launch_board(tasks: List[Dict]):
                     dbc.Row([
                         dbc.Col([
                             html.H5("Details", style={"fontWeight": 600, "marginBottom": "1rem", "color": "#2b6cb0"}),
-                            html.Ul([
-                                html.Li([html.Span("Type: ", style={"fontWeight": 500}), dbc.Badge(task['type'], color=type_color, className="ms-2", pill=True, style={"fontSize": "0.85rem"})]),
-                                html.Li([html.Span("Priority: ", style={"fontWeight": 500}), dbc.Badge(task['priority'].capitalize(), color=priority_color, pill=True, style={"fontSize": "0.85rem"})]),
-                                html.Li([html.Span("Status: ", style={"fontWeight": 500}), dbc.Badge(status_label, color=status_color, pill=True, style={"fontSize": "0.85rem"})]),
-                                html.Li([html.Span("Due: ", style={"fontWeight": 500}), html.Span(task.get('due_date') or '-', style={"color": "#555"})]),
-                                html.Li([html.Span("Created: ", style={"fontWeight": 500}), html.Span(created_str, style={"color": "#555"})]),
-                                html.Li([html.Span("Tags: ", style={"fontWeight": 500}), tag_badges if tag_badges else html.Span("-", style={"color": "#555"})]),
-                            ], style={"fontSize": "1rem", "listStyle": "none", "paddingLeft": 0}),
+                            html.Table([
+                                html.Thead([html.Tr([html.Th(col) for col in ["Attribute", "Value"]])]),
+                                html.Tbody(rows)
+                            ], style={"fontSize": "1rem", "borderCollapse": "collapse", "width": "100%"}),
                         ], width=6),
                         dbc.Col([
                             html.H5("Work Sessions", style={"fontWeight": 600, "marginBottom": "1rem", "color": "#38a169"}),
@@ -449,17 +407,35 @@ def launch_board(tasks: List[Dict]):
             ]),
         ], fluid=True)
 
-    app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP, "https://fonts.googleapis.com/css?family=Montserrat:600,700|Segoe+UI:400,700&display=swap"])
+    app = dash.Dash(
+        __name__, 
+        external_stylesheets=[
+            dbc.themes.BOOTSTRAP, 
+            "https://fonts.googleapis.com/css?family=Montserrat:600,700|Segoe+UI:400,700&display=swap"
+            ],
+        suppress_callback_exceptions=True
+        )
     app.title = "Flowistic Task Board"
     app.layout = html.Div([
         dcc.Location(id="url"),
         sidebar,
+        # Hidden checklist to satisfy Dash callback system
+        dcc.Checklist(
+            options=[{"label": "Show only repeatable tasks", "value": "repeatable"}],
+            value=[],
+            id="repeat-filter",
+            style={"display": "none"}
+        ),
         html.Div(id="page-content", style={"marginLeft": "240px", "padding": "2rem 2rem 2rem 2rem"})
     ])
 
-    @app.callback(Output("page-content", "children"), [Input("url", "pathname")])
-    def display_page(pathname):
-        # Match /task/<task_id>
+    # Add callback for filtering
+    @app.callback(
+        Output("page-content", "children"),
+        [Input("url", "pathname")],
+        [State("repeat-filter", "value")]
+    )
+    def display_page(pathname, repeat_filter):
         import re
         match = re.match(r"/task/(.+)", pathname or "")
         if match:
@@ -467,7 +443,11 @@ def launch_board(tasks: List[Dict]):
             return layout_task_details(task_id)
         if pathname == "/statistics":
             return layout_statistics()
-        return layout_board()
+        # Filter tasks if checklist is checked
+        filtered_tasks = tasks
+        if repeat_filter and "repeatable" in repeat_filter:
+            filtered_tasks = [t for t in tasks if t.get("repeat")]
+        return layout_board(filtered_tasks=filtered_tasks)
 
     def open_browser():
         webbrowser.open_new("http://127.0.0.1:8050/")

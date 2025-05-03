@@ -26,6 +26,7 @@ Efficient task management is essential for productivity in any project. This too
 - Update task properties after creation
 - Set and track the status of tasks with full history.
 - Update status via CLI (`todo update status <task_id> <status>`).
+- **Repeatable Tasks:** You can make tasks repeat automatically by specifying a repeat rule in natural language (e.g., "every day", "every week"). When a repeatable task is completed, it is automatically reopened with a new due date based on the rule.
 
 ### Time Tracking
 - Built-in Pomodoro-style timer (default: 25 minutes)
@@ -97,6 +98,18 @@ You'll be prompted for:
 - Priority (low/medium/high)
 - Due date (optional, supports natural language)
 - Initial note (optional)
+- Repeat rule (optional, e.g., "every week")
+
+### Add a Repeatable Task
+```bash
+todo add
+# You will be prompted for repeat rule (e.g., every week)
+```
+
+### Update Repeat Rule
+```bash
+todo update repeat <task_id> "every month"
+```
 
 ### List Tasks
 ```bash
@@ -161,6 +174,26 @@ todo update status PROJ-001 pending    # Set status directly
 todo update status PROJ-001            # Interactive prompt
 ```
 
+### Evolve Task Status
+
+You can move a task to the next workflow status using the `evolve` command:
+
+```bash
+todo evolve <task_id>
+```
+
+- Workflow order: `pending` → `doing` → `completed` → `cancelled`
+- If the task is already at the last status (`cancelled`), it will remain there and you will be notified.
+- The command updates the task status, marks as completed if appropriate, and appends to the status history.
+
+**Example:**
+
+```bash
+todo evolve PROJ-001
+```
+
+This will move the task `PROJ-001` to the next status in the workflow.
+
 ### Task Cancellation & Deletion
 
 - `todo cancel <task_id>`: Mark a task as cancelled. The task remains in your list but its status is shown as cancelled in both `list` and `show` commands.
@@ -204,12 +237,67 @@ todo help                # Show all commands
 todo help <command>      # Show detailed help for a specific command
 ```
 
+### Add and Remove Tags
+
+You can add or remove tags from a task using the following commands:
+
+#### Add a Tag
+
+```bash
+todo add-tag <task_id> <tag>
+```
+- Adds the specified tag to the task if not already present.
+- Example:
+  ```bash
+  todo add-tag PROJ-001 urgent
+  ```
+
+#### Remove a Tag
+
+```bash
+todo remove-tag <task_id> <tag>
+```
+- Removes the specified tag from the task if it exists.
+- Example:
+  ```bash
+  todo remove-tag PROJ-001 urgent
+  ```
+
+## Commands
+
+- `add`: Add a new task
+- `add-tag <task_id> <tag>`: Add a tag to a task
+- `board`: Visualize tasks in a Trello-like web board
+- `cancel <task_id>`: Mark a task as cancelled
+- `complete <task_id>`: Mark a task as completed
+- `delete <task_id>`: Permanently remove a task from your todo list
+- `evolve <task_id>`: Move a task to the next workflow status (pending → doing → completed → cancelled)
+- `help`: Show all commands or detailed help for a specific command
+- `init`: Initialize a new project
+- `list`: List all tasks
+- `note add <task_id> [note]`: Add a new note to a task
+- `note reset <task_id>`: Clear all notes from a task
+- `remove-tag <task_id> <tag>`: Remove a tag from a task
+- `show <task_id>`: Show detailed information about a task
+- `status`: Show project status
+- `update description <task_id> [description]`: Update the description of a task
+- `update due <task_id> [due_date]`: Update the due date of a task
+- `update priority <task_id> [priority]`: Update the priority of a task
+- `update repeat <task_id> [repeat_rule]`: Update the repeat rule of a task
+- `update status <task_id> [status]`: Update the status of a task
+- `update title <task_id> [title]`: Update the title of a task
+- `update type <task_id> [type]`: Update the type of a task
+- `workon <task_id> [-d duration]`: Start a work session on a task
+
 ## Changelog
 
 ### v0.2.0 (2025-05-03)
 - Feature: You can now set the status of a task (pending, doing, completed, cancelled).
 - All status changes are tracked in a per-task history (visible with `todo show <task_id>`).
-- New command: `todo update status <task_id> <status>` to change and track status.
+- **Repeatable tasks**: Add a repeat rule in natural language ("every week", "every month"). When completed, task is automatically reopened with next due date.
+
+### v0.2.1 (2025-05-04)
+- Added **repeatable task** feature: tasks can be set to repeat automatically based on a natural language rule.
 
 ## Configuration
 
@@ -226,22 +314,17 @@ project:
   description: "Project description"
   prefix: "PROJ"
   next_task_number: 1
+
 tasks:
   - task_id: "PROJ-001"
-    title: "Example Task"
-    description: "Task description"
-    type: "feature"
-    priority: "high"
-    created_at: "2025-04-12T20:00:00"
-    due_date: "2025-04-19T23:59:59"
-    completed: false
-    notes:
-      - "Initial task planning complete"
-      - "Updated requirements after review"
-    work_sessions:
-      - started_at: "2025-04-12T20:30:00"
-        duration: 25
-        interrupted: false
+    title: "Task title"
+    status: "pending"
+    status_history:
+      - status: "pending"
+        timestamp: "2025-05-03T10:00:00"
+    repeat: "every week"  # Optional, natural language
+    due_date: "2025-05-10T23:59:59"
+    ...
 ```
 
 ## Running Tests
