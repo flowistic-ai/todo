@@ -25,6 +25,7 @@ from rich.progress import (
 from rich.text import Text
 from dateutil import parser
 from todo.board import launch_board
+import pandas as pd
 
 app = typer.Typer()
 console = Console()
@@ -270,7 +271,7 @@ def tags():
     todos = load_todos()
     tag_counts = {}
     for task in todos["tasks"]:
-        for tag in task.get("tags", []):
+        for tag in (task.get("tags") or []):
             tag_counts[tag] = tag_counts.get(tag, 0) + 1
     if tag_counts:
         console.print("[bold]Tags:[/bold]")
@@ -286,7 +287,7 @@ def tag_tasks(tag: str):
     List all tasks associated with a given tag.
     """
     todos = load_todos()
-    filtered = [t for t in todos["tasks"] if tag in t.get("tags", [])]
+    filtered = [t for t in todos["tasks"] if tag in (t.get("tags") or [])]
     if not filtered:
         console.print(f"[yellow]No tasks found with tag '{tag}'.[/yellow]")
         return
@@ -337,7 +338,7 @@ def list(
 
     tasks = todos["tasks"]
     if tag:
-        tasks = [t for t in tasks if tag in t.get("tags", [])]
+        tasks = [t for t in tasks if tag in (t.get("tags") or [])]
 
     # Filter tasks
     if not all:
@@ -359,17 +360,23 @@ def list(
     table.add_column("Tags")
 
     for task in tasks:
+        # Ensure tags are sorted for display consistency
+        tags_list = sorted(task.get("tags") or [])
         due_date_str = format_due_date(parser.parse(task["due_date"])) if task.get("due_date") else "-"
         total_time = format_duration(sum(ws["duration"] for ws in task.get("work_sessions", [])))
-        status = (
-            "[green]Complete[/green]" if task.get("completed") else
-            "[yellow]Cancelled[/yellow]" if task.get("status") == "cancelled" else
-            "[cyan]Pending[/cyan]"
-        )
+        # Improved status display
+        if task.get("status") == "doing":
+            status = "[blue]Doing[/blue]"
+        elif task.get("status") == "cancelled":
+            status = "[yellow]Cancelled[/yellow]"
+        elif task.get("completed"):
+            status = "[green]Complete[/green]"
+        else:
+            status = "[cyan]Pending[/cyan]"
         note_count = len(task.get("notes", []))
         notes_text = f"[dim]{note_count} note{'s' if note_count != 1 else ''}[/dim]"
         type_color = TASK_TYPE_COLORS[task["type"]]
-        tags_text = ", ".join(task.get("tags", [])) if task.get("tags") else "-"
+        tags_text = ", ".join(tags_list) if tags_list else "-"
         table.add_row(
             task["task_id"],
             Text(task["type"], style=type_color),
@@ -453,6 +460,11 @@ def show(task_id: str = typer.Argument(..., help="The task id (e.g., PROJ-001)")
     repeat = task.get("repeat")
     if repeat:
         console.print(f"\n[cyan]Repeat:[/cyan] {repeat}")
+
+    # Tags
+    tags_list = sorted(task.get("tags") or [])
+    if tags_list:
+        console.print(f"\n[bold]Tags:[/bold] {', '.join(tags_list)}")
 
     # Work Sessions
     if task.get("work_sessions"):
@@ -914,6 +926,64 @@ def status():
 update_app = typer.Typer(help="Update task properties")
 app.add_typer(update_app, name="update")
 
+# Create a tag update sub-group under update
+update_tag_app = typer.Typer(help="Add or remove tags from a task")
+update_app.add_typer(update_tag_app, name="tag")
+
+
+@update_tag_app.command("add")
+def add_tag(
+    task_id: str = typer.Argument(..., help="The task id (e.g., PROJ-001)"),
+    tag: str = typer.Argument(..., help="Tag to add")
+):
+    """
+    Add a tag to a task.
+
+    Example:
+        todo update tag add PROJ-001 urgent
+    """
+    todos = load_todos()
+    task = next((t for t in todos["tasks"] if t["task_id"].lower() == task_id.lower()), None)
+    if not task:
+        console.print(f"[red]Error:[/red] Task '{task_id}' not found!")
+        return
+    tags = set(task.get("tags") or [])  # Ensure tags is always a set, even if None
+    if tag in tags:
+        console.print(f"[yellow]Task already has tag '{tag}'.[/yellow]")
+        return
+    tags.add(tag)
+    # Always store tags as a non-empty list, or remove the field if empty
+    task["tags"] = sorted(list(tags)) if tags else []
+    save_todos(todos)
+    console.print(f"[green]✓[/green] Tag '[bold]{tag}[/bold]' added to task [bold]{task_id}[/bold].")
+
+
+@update_tag_app.command("remove")
+def remove_tag(
+    task_id: str = typer.Argument(..., help="The task id (e.g., PROJ-001)"),
+    tag: str = typer.Argument(..., help="Tag to remove")
+):
+    """
+    Remove a tag from a task.
+
+    Example:
+        todo update tag remove PROJ-001 urgent
+    """
+    todos = load_todos()
+    task = next((t for t in todos["tasks"] if t["task_id"].lower() == task_id.lower()), None)
+    if not task:
+        console.print(f"[red]Error:[/red] Task '{task_id}' not found!")
+        return
+    tags = set(task.get("tags") or [])  # Ensure tags is always a set, even if None
+    if tag not in tags:
+        console.print(f"[yellow]Task does not have tag '{tag}'.[/yellow]")
+        return
+    tags.remove(tag)
+    # Always store tags as a non-empty list, or remove the field if empty
+    task["tags"] = sorted(list(tags)) if tags else []
+    save_todos(todos)
+    console.print(f"[green]✓[/green] Tag '[bold]{tag}[/bold]' removed from task [bold]{task_id}[/bold].")
+
 
 @update_app.command("type")
 def update_type(
@@ -1212,6 +1282,8 @@ def update_status(
                 console.print(f"[cyan]Task is repeatable. Next due date set to {next_due.strftime('%Y-%m-%d')}.[/cyan]")
             else:
                 console.print("[yellow]Warning: Could not parse repeat rule for next due date. Please check the repeat value.[/yellow]")
+        else:
+            console.print("[yellow]Warning: Task is not repeatable. Please set a repeat rule to enable auto-rescheduling.[/yellow]")
     elif new_status == "cancelled":
         task["completed"] = False
     save_todos(todos)
@@ -1270,18 +1342,25 @@ def search(query: str = typer.Argument(..., help="Search query (matches title, d
     table.add_column("Status")
     table.add_column("Notes")
     table.add_column("Tags")
+
     for task in matched_tasks:
+        # Ensure tags are sorted for display consistency
+        tags_list = sorted(task.get("tags") or [])
         due_date_str = format_due_date(parser.parse(task["due_date"])) if task.get("due_date") else "-"
         total_time = format_duration(sum(ws["duration"] for ws in task.get("work_sessions", [])))
-        status = (
-            "[green]Complete[/green]" if task.get("completed") else
-            "[yellow]Cancelled[/yellow]" if task.get("status") == "cancelled" else
-            "[cyan]Pending[/cyan]"
-        )
+        # Improved status display
+        if task.get("status") == "doing":
+            status = "[blue]Doing[/blue]"
+        elif task.get("status") == "cancelled":
+            status = "[yellow]Cancelled[/yellow]"
+        elif task.get("completed"):
+            status = "[green]Complete[/green]"
+        else:
+            status = "[cyan]Pending[/cyan]"
         note_count = len(task.get("notes", []))
         notes_text = f"[dim]{note_count} note{'s' if note_count != 1 else ''}[/dim]"
         type_color = TASK_TYPE_COLORS[task["type"]]
-        tags_text = ", ".join(task.get("tags", [])) if task.get("tags") else "-"
+        tags_text = ", ".join(tags_list) if tags_list else "-"
         table.add_row(
             task["task_id"],
             Text(task["type"], style=type_color),
@@ -1299,26 +1378,18 @@ def search(query: str = typer.Argument(..., help="Search query (matches title, d
 @app.command()
 def version():
     """
-    Show the version of the current CLI (dynamically retrieved from pyproject.toml).
+    Show the version of the current CLI.
     """
-    import toml
-    from pathlib import Path
-    pyproject_path = Path(__file__).parent.parent / "pyproject.toml"
-    if not pyproject_path.exists():
-        console.print("[red]pyproject.toml not found![/red]")
-        return
     try:
-        data = toml.load(pyproject_path)
-        version = (
-            data.get("project", {}).get("version") or
-            data.get("tool", {}).get("poetry", {}).get("version")
-        )
-        if version:
-            console.print(f"[bold green]Todo CLI version:[/bold green] {version}")
-        else:
-            console.print("[red]Version not found in pyproject.toml[/red]")
+        from importlib.metadata import version as pkg_version
+    except ImportError:
+        from importlib_metadata import version as pkg_version  # For Python <3.8
+
+    try:
+        ver = pkg_version("flowistic-todo")
+        console.print(f"[bold green]Todo CLI version:[/bold green] {ver}")
     except Exception as e:
-        console.print(f"[red]Error reading pyproject.toml:[/red] {e}")
+        console.print(f"[red]Could not determine version: {e}[/red]")
 
 
 @app.command()
@@ -1376,6 +1447,8 @@ def help(command: Optional[str] = typer.Argument(None, help="Command to get help
         ("update description <task_id>", "Update a task's description"),
         ("update status <task_id>", "Update a task's status"),
         ("update repeat <task_id>", "Update a task's repeatability"),
+        ("update tag add <task_id>", "Add a tag to a task"),
+        ("update tag remove <task_id>", "Remove a tag from a task"),
         ("cancel <task_id>", "Cancel a task by its task id (sets status to cancelled)"),
         ("delete <task_id>", "Delete a task by its task id (completely removes it from the list)"),
         ("tags", "List all unique tags across all tasks, along with the number of tasks for each tag"),
@@ -1384,6 +1457,11 @@ def help(command: Optional[str] = typer.Argument(None, help="Command to get help
         ("search <query>", "Search tasks by title, description, or notes"),
         ("board", "Launch a Dash web app with a Trello-like board showing all tasks grouped by status"),
         ("evolve <task_id>", "Move a task to the next workflow status"),
+        ("checklist add <item>", "Add a new checklist item"),
+        ("checklist list", "List all checklist items and their status"),
+        ("checklist check <index>", "Mark a checklist item as checked"),
+        ("checklist uncheck <index>", "Mark a checklist item as unchecked"),
+        ("checklist remove <index>", "Remove a checklist item by its number"),
     ]
 
     table = Table(show_header=False, box=None)
@@ -1447,61 +1525,236 @@ def evolve(task_id: str = typer.Argument(..., help="The task id (e.g., PROJ-001)
         console.print(f"[red]Error:[/red] Unknown status '{current_status}' for task '{task_id}'.")
 
 
-# Create an update command group
-update_app = typer.Typer(help="Update task properties")
-app.add_typer(update_app, name="update")
+# --- CHECKLIST COMMAND GROUP ---
+checklist_app = typer.Typer(help="Manage checklists (create, list, check, uncheck, remove items)")
+app.add_typer(checklist_app, name="checklist")
 
-
-@app.command()
-def add_tag(
-    task_id: str = typer.Argument(..., help="The task id (e.g., PROJ-001)"),
-    tag: str = typer.Argument(..., help="Tag to add")
-):
+@checklist_app.command("add")
+def checklist_add(item: str = typer.Argument(..., help="Checklist item text")):
     """
-    Add a tag to a task.
-
-    Example:
-        todo add-tag PROJ-001 urgent
+    Add a new item to the checklist.
     """
     todos = load_todos()
-    task = next((t for t in todos["tasks"] if t["task_id"].lower() == task_id.lower()), None)
-    if not task:
-        console.print(f"[red]Error:[/red] Task '{task_id}' not found!")
-        return
-    tags = set(task.get("tags", []))
-    if tag in tags:
-        console.print(f"[yellow]Task already has tag '{tag}'.[/yellow]")
-        return
-    tags.add(tag)
-    task["tags"] = list(tags)
+    if "checklist" not in todos:
+        todos["checklist"] = []
+    todos["checklist"].append({"item": item, "checked": False})
     save_todos(todos)
-    console.print(f"[green]✓[/green] Tag '[bold]{tag}[/bold]' added to task [bold]{task_id}[/bold].")
+    console.print(f"[green]✓[/green] Checklist item added: [bold]{item}[/bold]")
 
-
-@app.command()
-def remove_tag(
-    task_id: str = typer.Argument(..., help="The task id (e.g., PROJ-001)"),
-    tag: str = typer.Argument(..., help="Tag to remove")
-):
+@checklist_app.command("list")
+def checklist_list():
     """
-    Remove a tag from a task.
-
-    Example:
-        todo remove-tag PROJ-001 urgent
+    List all checklist items with their status.
     """
     todos = load_todos()
-    task = next((t for t in todos["tasks"] if t["task_id"].lower() == task_id.lower()), None)
-    if not task:
-        console.print(f"[red]Error:[/red] Task '{task_id}' not found!")
+    checklist = todos.get("checklist", [])
+    if not checklist:
+        console.print("[yellow]No checklist items found.[/yellow]")
         return
-    tags = set(task.get("tags", []))
-    if tag not in tags:
-        console.print(f"[yellow]Task does not have tag '{tag}'.[/yellow]")
+    table = Table(show_header=True, header_style="bold magenta")
+    table.add_column("#", style="dim", width=3)
+    table.add_column("Status", width=8)
+    table.add_column("Item")
+    for idx, entry in enumerate(checklist, 1):
+        status = "[green]✔[/green]" if entry.get("checked") else "[red]✗[/red]"
+        table.add_row(str(idx), status, entry.get("item", ""))
+    console.print(table)
+
+@checklist_app.command("check")
+def checklist_check(index: int = typer.Argument(..., help="Checklist item number (see checklist list)")):
+    """
+    Mark a checklist item as checked (completed).
+    """
+    todos = load_todos()
+    checklist = todos.get("checklist", [])
+    if not (1 <= index <= len(checklist)):
+        console.print(f"[red]Invalid index:[/red] {index}")
         return
-    tags.remove(tag)
-    task["tags"] = list(tags)
+    checklist[index-1]["checked"] = True
     save_todos(todos)
-    console.print(f"[green]✓[/green] Tag '[bold]{tag}[/bold]' removed from task [bold]{task_id}[/bold].")
+    console.print(f"[green]✓[/green] Checked item #{index}: [bold]{checklist[index-1]['item']}[/bold]")
+
+@checklist_app.command("uncheck")
+def checklist_uncheck(index: int = typer.Argument(..., help="Checklist item number (see checklist list)")):
+    """
+    Mark a checklist item as unchecked (not completed).
+    """
+    todos = load_todos()
+    checklist = todos.get("checklist", [])
+    if not (1 <= index <= len(checklist)):
+        console.print(f"[red]Invalid index:[/red] {index}")
+        return
+    checklist[index-1]["checked"] = False
+    save_todos(todos)
+    console.print(f"[yellow]Unchecked item #{index}: [bold]{checklist[index-1]['item']}[/bold]")
+
+@checklist_app.command("remove")
+def checklist_remove(index: int = typer.Argument(..., help="Checklist item number (see checklist list)")):
+    """
+    Remove a checklist item by its number.
+    """
+    todos = load_todos()
+    checklist = todos.get("checklist", [])
+    if not (1 <= index <= len(checklist)):
+        console.print(f"[red]Invalid index:[/red] {index}")
+        return
+    removed = checklist.pop(index-1)
+    save_todos(todos)
+    console.print(f"[red]Removed item #{index}: [bold]{removed['item']}[/bold]")
+
+
+@checklist_app.command("export")
+def checklist_export(
+    filename: str = typer.Argument(..., help="Output filename (e.g., checklist.xlsx or checklist.html)"),
+    html: bool = typer.Option(False, "--html", help="Export as interactive HTML instead of Excel")
+):
+    """
+    Export the checklist to an Excel file (default) or interactive HTML page (--html).
+    Both formats display checkboxes for item status.
+    """
+    todos = load_todos()
+    checklist = todos.get("checklist", [])
+    if not checklist:
+        console.print("[yellow]No checklist items to export.[/yellow]")
+        return
+    df = pd.DataFrame(checklist)
+    df.index += 1
+    df.index.name = "#"
+    # For Excel: use Unicode checkboxes
+    df["Status"] = df["checked"].map(lambda x: "☑" if x else "☐")
+    df.rename(columns={"item": "Item"}, inplace=True)
+    if html:
+        # For HTML: use real checkboxes
+        def html_checkbox(val, idx):
+            checked = " checked" if val else ""
+            return f'<input type="checkbox" class="todo-checkbox" data-idx="{idx}"{checked}>'
+        rows = []
+        for idx, row in df.iterrows():
+            is_checked = row["checked"]
+            tr_class = "checked-row" if is_checked else ""
+            item_html = row["Item"]
+            checkbox_html = html_checkbox(is_checked, idx)
+            rows.append(f'<tr class="{tr_class}"><th>{idx+1}</th><td>{item_html}</td><td>{checkbox_html}</td></tr>')
+        table_html = '''<table class="dataframe sortable">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>Item</th>
+      <th>Status</th>
+    </tr>
+    <tr>
+      <th>#</th>
+      <th></th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+''' + "\n".join(rows) + '''
+  </tbody>
+</table>'''
+        html_template = f"""
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='UTF-8'>
+<title>Checklist Export</title>
+<style>
+body {{ font-family: 'Segoe UI', Arial, sans-serif; background: #f9f9f9; }}
+table.sortable {{ border-collapse: collapse; width: 70%; margin: 2em auto; background: #fff; box-shadow: 0 2px 12px rgba(0,0,0,0.06); }}
+table.sortable th, table.sortable td {{ border: 1px solid #e2e8f0; padding: 0.7em 1em; text-align: left; }}
+table.sortable th {{ background: #f4f4f4; cursor: pointer; }}
+table.sortable tr:nth-child(even) {{ background: #f7fafc; }}
+table.sortable tr:hover {{ background: #e6fffa; }}
+input[type=checkbox] {{ width: 1.2em; height: 1.2em; accent-color: #38a169; }}
+.checked-row td, .checked-row th {{ background: #e6ffe6 !important; color: #4a7c59; text-decoration: line-through; }}
+</style>
+<script>
+function sortTable(n) {{
+  var table, rows, switching, i, x, y, shouldSwitch, dir, switchcount = 0;
+  table = document.querySelector("table.sortable");
+  switching = true;
+  dir = "asc";
+  while (switching) {{
+    switching = false;
+    rows = table.rows;
+    for (i = 1; i < (rows.length - 1); i++) {{
+      shouldSwitch = false;
+      x = rows[i].getElementsByTagName("TD")[n];
+      y = rows[i + 1].getElementsByTagName("TD")[n];
+      if (dir == "asc") {{
+        if (x.innerText.toLowerCase() > y.innerText.toLowerCase()) {{
+          shouldSwitch = true;
+          break;
+        }}
+      }} else if (dir == "desc") {{
+        if (x.innerText.toLowerCase() < y.innerText.toLowerCase()) {{
+          shouldSwitch = true;
+          break;
+        }}
+      }}
+    }}
+    if (shouldSwitch) {{
+      rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
+      switching = true;
+      switchcount ++;
+    }} else {{
+      if (switchcount == 0 && dir == "asc") {{
+        dir = "desc";
+        switching = true;
+      }}
+    }}
+  }}
+}}
+document.addEventListener("DOMContentLoaded", function() {{
+  var ths = document.querySelectorAll("table.sortable th");
+  ths.forEach(function(th, idx) {{
+    th.addEventListener("click", function() {{ sortTable(idx); }});
+  }});
+  // Checkbox interactivity & persistence
+  var checkboxes = document.querySelectorAll('.todo-checkbox');
+  checkboxes.forEach(function(cb, idx) {{
+    var row = cb.closest('tr');
+    var saved = localStorage.getItem('todo-checkbox-' + idx);
+    if (saved !== null) {{
+      cb.checked = saved === 'true';
+    }}
+    // Set initial row highlight
+    if(cb.checked) {{
+      row.classList.add('checked-row');
+    }} else {{
+      row.classList.remove('checked-row');
+    }}
+    cb.addEventListener('change', function() {{
+      localStorage.setItem('todo-checkbox-' + idx, cb.checked);
+      if(cb.checked) {{
+        row.classList.add('checked-row');
+      }} else {{
+        row.classList.remove('checked-row');
+      }}
+    }});
+  }});
+}});
+</script>
+</head>
+<body>
+<h2 style='text-align:center;margin-top:2em;'>Checklist Export</h2>
+{table_html}
+<p style='text-align:center;color:#888;'>Exported from Flowistic Todo CLI</p>
+</body>
+</html>
+"""
+        try:
+            with open(filename, "w", encoding="utf-8") as f:
+                f.write(html_template)
+            console.print(f"[green]✓[/green] Checklist exported to [bold]{filename}[/bold] (HTML)")
+        except Exception as e:
+            console.print(f"[red]Error exporting to HTML:[/red] {e}")
+    else:
+        try:
+            df[["Item", "Status"]].to_excel(filename)
+            console.print(f"[green]✓[/green] Checklist exported to [bold]{filename}[/bold] (Excel)")
+        except Exception as e:
+            console.print(f"[red]Error exporting to Excel:[/red] {e}")
 
 
 if __name__ == "__main__":

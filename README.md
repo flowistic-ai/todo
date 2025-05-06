@@ -27,6 +27,7 @@ Efficient task management is essential for productivity in any project. This too
 - Set and track the status of tasks with full history.
 - Update status via CLI (`todo update status <task_id> <status>`).
 - **Repeatable Tasks:** You can make tasks repeat automatically by specifying a repeat rule in natural language (e.g., "every day", "every week"). When a repeatable task is completed, it is automatically reopened with a new due date based on the rule.
+- **Checklists:** Create and manage simple checklists directly from the CLI. Checklists are stored in your `todo.yaml` and can be used for quick, non-project-specific lists (see below).
 
 ### Time Tracking
 - Built-in Pomodoro-style timer (default: 25 minutes)
@@ -263,12 +264,60 @@ todo remove-tag <task_id> <tag>
   todo remove-tag PROJ-001 urgent
   ```
 
+## Checklist Management
+
+You can create and manage checklists independently of project tasks:
+
+- Add a checklist item:
+  ```bash
+  todo checklist add "Buy groceries"
+  ```
+- List all checklist items:
+  ```bash
+  todo checklist list
+  ```
+- Check off an item:
+  ```bash
+  todo checklist check 1
+  ```
+- Uncheck an item:
+  ```bash
+  todo checklist uncheck 1
+  ```
+- Remove an item:
+  ```bash
+  todo checklist remove 1
+  ```
+- Export checklist to Excel:
+  ```bash
+  todo checklist export checklist.xlsx
+  ```
+- Export checklist to interactive HTML (with clickable checkboxes, persistent state, and visual highlighting for completed items):
+  ```bash
+  todo checklist export checklist.html --html
+  ```
+
+### HTML Export Features
+
+- **Interactive checkboxes:** Check/uncheck items directly in the browser.
+- **Persistent state:** Checkbox states are saved in your browser (localStorage).
+- **Visual distinction:** Checked items are highlighted with a green background and strikethrough text.
+- **No dependencies:** The HTML file is standalone and works in any modern browser.
+
+Open the exported HTML file in your browser to use the interactive checklist.
+
 ## Commands
 
 - `add`: Add a new task
 - `add-tag <task_id> <tag>`: Add a tag to a task
 - `board`: Visualize tasks in a Trello-like web board
 - `cancel <task_id>`: Mark a task as cancelled
+- `checklist add <item>`: Add a new checklist item
+- `checklist export <filename> [--html]`: Export the checklist to Excel or interactive HTML
+- `checklist list`: List all checklist items and their status
+- `checklist check <index>`: Mark a checklist item as checked
+- `checklist uncheck <index>`: Mark a checklist item as unchecked
+- `checklist remove <index>`: Remove a checklist item by its number
 - `complete <task_id>`: Mark a task as completed
 - `delete <task_id>`: Permanently remove a task from your todo list
 - `evolve <task_id>`: Move a task to the next workflow status (pending → doing → completed → cancelled)
